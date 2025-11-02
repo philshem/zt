@@ -362,16 +362,24 @@ map.on('popupclose', () => {
 
 function eventTargetsPopup(originalEvent) {
   if (!originalEvent) return false;
+  const classesToMatch = ['leaflet-popup', 'leaflet-popup-content', 'leaflet-popup-content-wrapper'];
   if (typeof originalEvent.composedPath === 'function') {
     const path = originalEvent.composedPath();
     if (Array.isArray(path)) {
-      return path.some(node => node && node.classList && node.classList.contains('leaflet-popup'));
+      return path.some(node => {
+        if (!node || !node.classList) return false;
+        return classesToMatch.some(cls => node.classList.contains(cls));
+      });
     }
   }
   let target = originalEvent.target || originalEvent.srcElement;
   while (target) {
-    if (target.classList && target.classList.contains('leaflet-popup')) {
+    if (target.classList && classesToMatch.some(cls => target.classList.contains(cls))) {
       return true;
+    }
+    if (typeof target.closest === 'function') {
+      const popupAncestor = target.closest('.leaflet-popup');
+      if (popupAncestor) return true;
     }
     target = target.parentNode;
   }
