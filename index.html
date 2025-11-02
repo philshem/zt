@@ -175,28 +175,49 @@
       background: #e0e0e0;
     }
     
-    #locateButton {
-      position: absolute; bottom: 20px; right: 16px; z-index:1000;
-      background: rgba(255,255,255,0.95); padding: 8px 12px;
-      border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
-      font-size: 18px; font-weight: bold;
-      cursor: pointer; user-select: none;
-      transition: background 0.2s;
-      border: none;
+    #mapControls {
+      position: absolute;
+      bottom: 20px;
+      right: 16px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: flex-end;
     }
-    #locateButton:hover {
+    .map-control-button {
+      background: rgba(255,255,255,0.95);
+      padding: 8px 12px;
+      border-radius: 5px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+      font-size: 18px;
+      font-weight: bold;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.2s, color 0.2s;
+      border: none;
+      min-width: 46px;
+    }
+    .map-control-button:hover {
       background: rgba(255,255,255,1);
     }
-    #locateButton:active {
+    .map-control-button:active {
       background: rgba(230,230,230,1);
+    }
+    .map-control-button.active {
+      background: rgba(37,99,235,0.9);
+      color: #ffffff;
     }
   </style>
 </head>
 <body>
   <div id="status">Initializing…</div>
   <div id="infoButton" title="Truffle Information">ℹ️</div>
-  <button id="locateButton" title="Find my location">📍</button>
+  <div id="mapControls">
+    <button id="rotateButton" class="map-control-button" title="Align map with heading">🧭</button>
+    <button id="locateButton" class="map-control-button" title="Find my location">📍</button>
+  </div>
   <div id="map"></div>
   
   <div id="infoModal">
@@ -256,7 +277,8 @@
 const map = L.map('map', {
   closePopupOnClick: false,
   closeTooltipOnClick: false,
-  tapTolerance: 25
+  tapTolerance: 25,
+  rotate: true
 }).setView(START_COORD, START_ZOOM);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -274,6 +296,12 @@ let locateRequested = false;
 let locateResetTimer = null;
 let activePopup = null;
 let allowBackgroundPopupClose = false;
+let rotateActive = false;
+let orientationHandler = null;
+let orientationLastHeading = null;
+let orientationPermissionDenied = false;
+let orientationInProgress = false;
+let orientationLastUpdate = 0;
 
 // Geolocation requests are triggered via the 📍 button to satisfy browser permission requirements.
 
@@ -401,6 +429,140 @@ function handleBackgroundPopupClose(e) {
 map.on('click', handleBackgroundPopupClose);
 map.on('touchstart', handleBackgroundPopupClose);
 map.on('contextmenu', handleBackgroundPopupClose);
+
+function supportsMapRotation(){
+  return typeof map.setBearing === 'function';
+}
+
+function supportsDeviceOrientation(){
+  return typeof window !== 'undefined' && 'DeviceOrientationEvent' in window;
+}
+
+function normalizeHeading(value){
+  if (typeof value !== 'number' || Number.isNaN(value)) return null;
+  let heading = value % 360;
+  if (heading < 0) heading += 360;
+  return heading;
+}
+
+function headingDelta(a,b){
+  if (a === null || b === null) return Infinity;
+  const diff = Math.abs(a - b) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
+
+function extractHeading(event){
+  if (!event) return null;
+  if (typeof event.webkitCompassHeading === 'number') {
+    return normalizeHeading(event.webkitCompassHeading);
+  }
+  if (typeof event.compassHeading === 'number') {
+    return normalizeHeading(event.compassHeading);
+  }
+  if (typeof event.alpha === 'number') {
+    return normalizeHeading(event.alpha);
+  }
+  if (typeof event.heading === 'number') {
+    return normalizeHeading(event.heading);
+  }
+  return null;
+}
+
+function applyHeadingToMap(heading){
+  if (!supportsMapRotation()) return;
+  try {
+    map.setBearing(heading, { animate: false });
+  } catch (err) {
+    console.warn('Map bearing update failed', err);
+  }
+}
+
+function attachOrientationListener(){
+  if (orientationHandler) return true;
+  const handler = (event) => {
+    const heading = extractHeading(event);
+    if (heading === null) return;
+    const now = Date.now();
+    const delta = headingDelta(orientationLastHeading, heading);
+    if (delta < 1 && now - orientationLastUpdate < 120) return;
+    orientationLastHeading = heading;
+    orientationLastUpdate = now;
+    applyHeadingToMap(heading);
+  };
+  window.addEventListener('deviceorientationabsolute', handler, true);
+  window.addEventListener('deviceorientation', handler, true);
+  orientationHandler = handler;
+  return true;
+}
+
+function detachOrientationListener(){
+  if (!orientationHandler) return;
+  window.removeEventListener('deviceorientationabsolute', orientationHandler, true);
+  window.removeEventListener('deviceorientation', orientationHandler, true);
+  orientationHandler = null;
+}
+
+async function enableHeadingFollow(){
+  if (orientationInProgress) return false;
+  orientationInProgress = true;
+
+  if (!supportsMapRotation()) {
+    orientationInProgress = false;
+    statusEl.textContent = 'Map rotation not supported in this browser.';
+    return false;
+  }
+
+  if (!supportsDeviceOrientation()) {
+    orientationInProgress = false;
+    statusEl.textContent = 'Compass data not available on this device.';
+    return false;
+  }
+
+  if (orientationPermissionDenied) {
+    orientationInProgress = false;
+    statusEl.textContent = 'Compass access previously denied.';
+    return false;
+  }
+
+  let permissionGranted = true;
+  if (typeof window.DeviceOrientationEvent !== 'undefined' && typeof window.DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const response = await window.DeviceOrientationEvent.requestPermission();
+      permissionGranted = response === 'granted';
+    } catch (err) {
+      console.warn('Device orientation permission error', err);
+      permissionGranted = false;
+    }
+  }
+
+  if (!permissionGranted) {
+    orientationPermissionDenied = true;
+    orientationInProgress = false;
+    statusEl.textContent = 'Compass permission denied.';
+    return false;
+  }
+
+  attachOrientationListener();
+  orientationInProgress = false;
+  statusEl.textContent = 'Heading lock enabled.';
+  return true;
+}
+
+function disableHeadingFollow(resetBearing = true, notify = true){
+  detachOrientationListener();
+  orientationLastHeading = null;
+  orientationLastUpdate = 0;
+  if (resetBearing && supportsMapRotation()) {
+    try {
+      map.setBearing(0, { animate: true });
+    } catch (err) {
+      map.setBearing(0);
+    }
+  }
+  if (notify) {
+    statusEl.textContent = 'Heading lock disabled.';
+  }
+}
 
   // Create custom shape markers
   function createShapeMarker(latlng, color, shape, isIdeal = false, isCultivar = false) {
@@ -713,7 +875,38 @@ map.on('contextmenu', handleBackgroundPopupClose);
   };
 
   // ---------- LOCATE BUTTON ----------
+  const rotateButton = document.getElementById('rotateButton');
   const locateButton = document.getElementById('locateButton');
+
+  rotateButton.onclick = async () => {
+    if (orientationInProgress) {
+      return;
+    }
+
+    if (rotateActive) {
+      rotateActive = false;
+      rotateButton.classList.remove('active');
+      rotateButton.textContent = '🧭';
+      disableHeadingFollow(true);
+      return;
+    }
+
+  rotateButton.textContent = '⏳';
+  rotateButton.disabled = true;
+  const enabled = await enableHeadingFollow();
+  rotateButton.disabled = false;
+
+    if (enabled) {
+      rotateActive = true;
+      rotateButton.classList.add('active');
+      rotateButton.textContent = '🧭↻';
+    } else {
+      rotateActive = false;
+      rotateButton.classList.remove('active');
+      rotateButton.textContent = '🧭';
+      disableHeadingFollow(true, false);
+    }
+  };
   
   locateButton.onclick = () => {
     if (locateRequested) {
