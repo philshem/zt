@@ -17,6 +17,19 @@
       max-width: 320px;
     }
     .leaflet-popup-content { max-width: 320px; word-break:break-word; }
+    .leaflet-popup-content-wrapper {
+      border-radius: 8px;
+    }
+    .sticky-popup .leaflet-popup-content {
+      max-height: 260px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
+    }
+    .sticky-popup .leaflet-popup-close-button {
+      font-size: 20px;
+      padding: 4px 6px;
+    }
     
     #infoButton {
       position: absolute; top: 8px; right: 8px; z-index:1000;
@@ -156,7 +169,11 @@
   const DEBOUNCE_MS = 500;
 
 // ---------- MAP SETUP ----------
-const map = L.map('map').setView(START_COORD, START_ZOOM);
+const map = L.map('map', {
+  closePopupOnClick: false,
+  closeTooltipOnClick: false,
+  tapTolerance: 25
+}).setView(START_COORD, START_ZOOM);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
@@ -168,7 +185,6 @@ const statusEl = document.getElementById('status');
 // Store location marker and circle for updates
 let userMarker = null;
 let userCircle = null;
-let firstLocation = true; // Flag to only pan on first successful geolocation
 
 // Geolocation requests are triggered via the 📍 button to satisfy browser permission requirements.
 
@@ -183,7 +199,10 @@ map.on('locationfound', (e) => {
   // Add marker
   userMarker = L.marker(e.latlng)
     .addTo(map)
-    .bindPopup(`You are within ${Math.round(radius)} meters from this point`);
+    .bindPopup(`You are within ${Math.round(radius)} meters from this point`, {
+      closeOnClick: false,
+      className: 'sticky-popup'
+    });
 
   // Add accuracy circle
   userCircle = L.circle(e.latlng, {
@@ -193,17 +212,24 @@ map.on('locationfound', (e) => {
     fillOpacity: 0.2
   }).addTo(map);
 
-  // Pan to user location only once
-  if (firstLocation) {
-    map.setView(e.latlng, 17);
-    firstLocation = false;
-  }
+  const currentZoom = map.getZoom();
+  const desiredZoom = currentZoom < 17 ? 17 : currentZoom;
+  map.setView(e.latlng, desiredZoom);
 });
 
 // When location access is denied or fails
 map.on('locationerror', (e) => {
   console.warn("Geolocation failed:", e.message);
   statusEl.textContent = "Could not determine your location.";
+});
+
+// Keep popups interactive on touch devices without immediately closing
+map.on('popupopen', (e) => {
+  const popupEl = e.popup.getElement();
+  if (popupEl) {
+    L.DomEvent.disableClickPropagation(popupEl);
+    L.DomEvent.disableScrollPropagation(popupEl);
+  }
 });
 
   // Create custom shape markers
@@ -247,7 +273,12 @@ map.on('locationerror', (e) => {
   let wfsLayer = L.geoJSON(null, {
     onEachFeature(feature, layer) {
       const props = feature.properties || {};
-      layer.bindPopup(buildPopup(props));
+      layer.bindPopup(buildPopup(props), {
+        autoClose: true,
+        closeButton: true,
+        closeOnClick: false,
+        className: 'sticky-popup'
+      });
       
       // Store feature data for filtering
       layer.feature = feature;
@@ -509,8 +540,7 @@ map.on('locationerror', (e) => {
   locateButton.onclick = () => {
     locateButton.textContent = '⏳';
     map.locate({
-      setView: true,
-      maxZoom: 17,
+      setView: false,
       enableHighAccuracy: true,
       timeout: 10000
     });
