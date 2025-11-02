@@ -15,6 +15,15 @@
       border-radius:5px; box-shadow:0 1px 3px rgba(0,0,0,0.15);
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; font-size:13px;
       max-width: 320px;
+      transition: background 0.2s, color 0.2s;
+    }
+    #status.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    #status.success {
+      background: #dcfce7;
+      color: #166534;
     }
     .leaflet-popup-content { max-width: 320px; word-break:break-word; }
     .leaflet-popup-content-wrapper {
@@ -209,6 +218,13 @@
       background: rgba(37,99,235,0.9);
       color: #ffffff;
     }
+    .map-control-button:disabled,
+    .map-control-button.disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+      background: rgba(229,231,235,0.9);
+      color: #4b5563;
+    }
   </style>
 </head>
 <body>
@@ -302,6 +318,44 @@ let orientationLastHeading = null;
 let orientationPermissionDenied = false;
 let orientationInProgress = false;
 let orientationLastUpdate = 0;
+let statusTimer = null;
+
+function updateStatus(message, { type = 'info', sticky = false, allowHtml = false } = {}) {
+  if (!statusEl) return;
+  if (statusTimer) {
+    clearTimeout(statusTimer);
+    statusTimer = null;
+  }
+
+  statusEl.classList.remove('error', 'success');
+  if (type === 'error') {
+    statusEl.classList.add('error');
+  } else if (type === 'success') {
+    statusEl.classList.add('success');
+  }
+
+  if (allowHtml) {
+    statusEl.innerHTML = message;
+  } else {
+    statusEl.textContent = message;
+  }
+
+  if (!sticky) {
+    statusTimer = setTimeout(() => {
+      statusEl.textContent = 'Ready';
+      statusEl.classList.remove('error', 'success');
+      statusTimer = null;
+    }, 5000);
+  }
+}
+
+function warnOnce(key, ...args) {
+  if (!warnOnce.cache.has(key)) {
+    console.warn(...args);
+    warnOnce.cache.add(key);
+  }
+}
+warnOnce.cache = new Set();
 
 // Geolocation requests are triggered via the 📍 button to satisfy browser permission requirements.
 
@@ -316,6 +370,7 @@ map.on('locationfound', (e) => {
     locateResetTimer = null;
   }
   locateButton.textContent = '📍';
+  updateStatus('Location pinpointed.', { type: 'success' });
   // Remove old marker if exists
   if (userMarker) map.removeLayer(userMarker);
   if (userCircle) map.removeLayer(userCircle);
@@ -354,7 +409,7 @@ map.on('locationerror', (e) => {
     locateResetTimer = null;
   }
   console.warn("Geolocation failed:", e.message);
-  statusEl.textContent = "Could not determine your location.";
+  updateStatus('Could not determine your location.', { type: 'error', sticky: true });
   locateButton.textContent = '❌';
   setTimeout(() => {
     locateButton.textContent = '📍';
@@ -508,19 +563,19 @@ async function enableHeadingFollow(){
 
   if (!supportsMapRotation()) {
     orientationInProgress = false;
-    statusEl.textContent = 'Map rotation not supported in this browser.';
+    updateStatus('Map rotation not supported in this browser.', { type: 'error', sticky: true });
     return false;
   }
 
   if (!supportsDeviceOrientation()) {
     orientationInProgress = false;
-    statusEl.textContent = 'Compass data not available on this device.';
+    updateStatus('Compass data not available on this device.', { type: 'error', sticky: true });
     return false;
   }
 
   if (orientationPermissionDenied) {
     orientationInProgress = false;
-    statusEl.textContent = 'Compass access previously denied.';
+    updateStatus('Compass access previously denied.', { type: 'error', sticky: true });
     return false;
   }
 
@@ -538,13 +593,13 @@ async function enableHeadingFollow(){
   if (!permissionGranted) {
     orientationPermissionDenied = true;
     orientationInProgress = false;
-    statusEl.textContent = 'Compass permission denied.';
+    updateStatus('Compass permission denied.', { type: 'error', sticky: true });
     return false;
   }
 
   attachOrientationListener();
   orientationInProgress = false;
-  statusEl.textContent = 'Heading lock enabled.';
+  updateStatus('Heading lock enabled.', { type: 'success' });
   return true;
 }
 
@@ -560,13 +615,12 @@ function disableHeadingFollow(resetBearing = true, notify = true){
     }
   }
   if (notify) {
-    statusEl.textContent = 'Heading lock disabled.';
+    updateStatus('Heading lock disabled.');
   }
 }
 
   // Create custom shape markers
   function createShapeMarker(latlng, color, shape, isIdeal = false, isCultivar = false) {
-    const size = 12;
     const svgShapes = {
       circle: `<circle cx="12" cy="12" r="8" fill="${color}" stroke="white" stroke-width="2"/>`,
       square: `<rect x="6" y="6" width="12" height="12" fill="${color}" stroke="white" stroke-width="2"/>`,
@@ -662,8 +716,6 @@ function disableHeadingFollow(resetBearing = true, notify = true){
     'Tilia platyphyllos': { color: '#fee08b', name: 'Linden', shape: 'diamond', order: 5, truffles: ['uncinatum', 'brumale'], minAge: 30, maxAge: 80 }
   };
   
-
-
   function isCultivar(latinName) {
     // Check if the name contains cultivar indicators (quotes, 'cv.', 'var.', etc.)
     return latinName.includes("'") || latinName.includes('"') || 
@@ -706,8 +758,6 @@ function disableHeadingFollow(resetBearing = true, notify = true){
     return age >= truffleSpecies.minAge && age <= truffleSpecies.maxAge;
   }
   
-
-
   function fmtValue(value){
     if (value === null || value === undefined || value === '') return '—';
     return escapeHtml(String(value));
@@ -815,7 +865,7 @@ function disableHeadingFollow(resetBearing = true, notify = true){
     const bounds = map.getBounds();
     const bboxStr = bounds.toBBoxString(); // "minLng,minLat,maxLng,maxLat"
     const url = buildWfsUrl(bboxStr);
-    statusEl.textContent = 'Fetching features for current view…';
+    updateStatus('Fetching trees for current view…', { sticky: true });
     try {
       const resp = await fetch(url, { cache: 'no-store' });
       if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
@@ -826,18 +876,22 @@ function disableHeadingFollow(resetBearing = true, notify = true){
       // If server returns features in a property other than "features", try to handle gracefully
       if (geojson.type === 'FeatureCollection' && Array.isArray(geojson.features)) {
         wfsLayer.addData(geojson);
-        statusEl.textContent = `Loaded ${geojson.features.length} total trees`;
+        updateStatus(`Loaded ${geojson.features.length} total trees`, { type: 'success' });
       } else if (geojson.features && Array.isArray(geojson.features)) {
         wfsLayer.addData(geojson.features);
-        statusEl.textContent = `Loaded ${geojson.features.length} total trees`;
+        updateStatus(`Loaded ${geojson.features.length} total trees`, { type: 'success' });
       } else {
         // unexpected response; show raw
-        console.warn('Unexpected GeoJSON shape', geojson);
-        statusEl.textContent = 'Loaded (unexpected response shape) — check console';
+  warnOnce('unexpected-geojson', 'Unexpected GeoJSON shape', geojson);
+        updateStatus('Loaded (unexpected response shape) — check console', { type: 'error', sticky: true });
       }
     } catch (err) {
       console.error('WFS fetch failed', err);
-      statusEl.innerHTML = `Failed to load WFS: ${escapeHtml(err.message)}<br><small>(Check console for details)</small>`;
+      updateStatus(`Failed to load WFS: ${escapeHtml(err.message)}<br><small>(Check console for details)</small>`, {
+        type: 'error',
+        allowHtml: true,
+        sticky: true
+      });
     }
   }
 
@@ -878,7 +932,16 @@ function disableHeadingFollow(resetBearing = true, notify = true){
   const rotateButton = document.getElementById('rotateButton');
   const locateButton = document.getElementById('locateButton');
 
+  if (!supportsMapRotation() || !supportsDeviceOrientation()) {
+    rotateButton.disabled = true;
+    rotateButton.title = 'Compass rotation is not available in this browser.';
+    rotateButton.classList.add('disabled');
+  }
+
   rotateButton.onclick = async () => {
+    if (rotateButton.disabled) {
+      return;
+    }
     if (orientationInProgress) {
       return;
     }
@@ -891,10 +954,10 @@ function disableHeadingFollow(resetBearing = true, notify = true){
       return;
     }
 
-  rotateButton.textContent = '⏳';
-  rotateButton.disabled = true;
-  const enabled = await enableHeadingFollow();
-  rotateButton.disabled = false;
+    rotateButton.textContent = '⏳';
+    rotateButton.disabled = true;
+    const enabled = await enableHeadingFollow();
+    rotateButton.disabled = false;
 
     if (enabled) {
       rotateActive = true;
@@ -907,6 +970,17 @@ function disableHeadingFollow(resetBearing = true, notify = true){
       disableHeadingFollow(true, false);
     }
   };
+ 
+  document.addEventListener('visibilitychange', () => {
+    if (!rotateActive) {
+      return;
+    }
+    if (document.hidden) {
+      disableHeadingFollow(false, false);
+    } else {
+      enableHeadingFollow();
+    }
+  });
   
   locateButton.onclick = () => {
     if (locateRequested) {
@@ -920,12 +994,20 @@ function disableHeadingFollow(resetBearing = true, notify = true){
       locateResetTimer = null;
     }
 
-    map.locate({
-      setView: false,
-      enableHighAccuracy: true,
-      timeout: GEO_TIMEOUT_MS,
-      watch: false
-    });
+    try {
+      map.locate({
+        setView: false,
+        enableHighAccuracy: true,
+        timeout: GEO_TIMEOUT_MS,
+        watch: false
+      });
+    } catch (err) {
+      locateRequested = false;
+      locateButton.textContent = '📍';
+      updateStatus('Geolocation is not supported in this browser.', { type: 'error', sticky: true });
+      warnOnce('locate-unsupported', err.message || 'Geolocation unsupported');
+      return;
+    }
     
     locateResetTimer = setTimeout(() => {
       if (locateButton.textContent === '⏳') {

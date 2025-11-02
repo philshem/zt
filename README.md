@@ -44,3 +44,33 @@ Tree data from [Stadt Zürich Open Data](https://data.stadt-zuerich.ch/dataset/b
 ## License
 
 This is a tool for personal use. Follow the original dataset's license and data-use policies.
+
+## for fun
+
+### find the oldest tree
+
+```bash
+jq '
+  .features
+  | map(select(.properties.pflanzjahr != null))
+  | sort_by(.properties.pflanzjahr)
+  | .[0]
+  | {pflanzjahr: .properties.pflanzjahr, coordinates: .geometry.coordinates, feature: .}
+' 304c0c00-b7f0-11f0-956f-005056b0ce82/data/gsz.baumkataster_baumstandorte.json
+```
+
+### make a histogram of trees per decade
+
+```bash
+jq -r '
+  [.features[].properties.pflanzjahr
+   | select(. != null)
+   | (. / 10 | floor * 10)]
+  | group_by(.)
+  | map({decade: .[0], count: length})
+  | sort_by(.decade)
+  | .[]
+  | "\(.decade) \(.count)"
+' 304c0c00-b7f0-11f0-956f-005056b0ce82/data/gsz.baumkataster_baumstandorte.json \
+| awk '{printf "%s | ", $1; for(i=0;i<$2/1000;i++) printf "*"; print ""}'
+```
