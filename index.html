@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Zürich Truffle Tree Finder</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌳</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='https://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌳</text></svg>">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     html,body,#map{height:100%;margin:0;padding:0}
@@ -138,47 +138,60 @@
   const DEBOUNCE_MS = 500;
 
   // ---------- MAP SETUP ----------
-  const map = L.map('map').setView(START_COORD, START_ZOOM);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
+const map = L.map('map').setView(START_COORD, START_ZOOM);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const statusEl = document.getElementById('status');
+
+// Store location marker and circle for updates
+let userMarker = null;
+let userCircle = null;
+let firstLocation = true; // Flag to only pan on first successful geolocation
+
+// 🔵 Try to locate user's position (without forcing view change)
+map.locate({
+  watch: false,
+  enableHighAccuracy: true,
+  timeout: 10000 // 10 seconds
+});
+
+// When location is found, add a marker
+map.on('locationfound', (e) => {
+  // Remove old marker if exists
+  if (userMarker) map.removeLayer(userMarker);
+  if (userCircle) map.removeLayer(userCircle);
+  
+  const radius = e.accuracy / 2;
+
+  // Add marker
+  userMarker = L.marker(e.latlng)
+    .addTo(map)
+    .bindPopup(`You are within ${Math.round(radius)} meters from this point`);
+
+  // Add accuracy circle
+  userCircle = L.circle(e.latlng, {
+    radius: radius,
+    color: '#136aec',
+    fillColor: '#136aec',
+    fillOpacity: 0.2
   }).addTo(map);
 
-  const statusEl = document.getElementById('status');
+  // Pan to user location only once
+  if (firstLocation) {
+    map.setView(e.latlng, 17);
+    firstLocation = false;
+  }
+});
 
-  // Store location marker and circle for updates
-  let userMarker = null;
-  let userCircle = null;
-
-  // 🔵 Try to locate user's position (without forcing view change)
-  map.locate({ watch: false, enableHighAccuracy: true });
-
-  // When location is found, add a marker
-  map.on('locationfound', (e) => {
-    // Remove old marker if exists
-    if (userMarker) map.removeLayer(userMarker);
-    if (userCircle) map.removeLayer(userCircle);
-    
-    const radius = e.accuracy / 2;
-    userMarker = L.marker(e.latlng).addTo(map)
-      .bindPopup(`You are within ${Math.round(radius)} meters from this point`);
-    userCircle = L.circle(e.latlng, radius, { 
-      color: '#136aec', 
-      fillColor: '#136aec', 
-      fillOpacity: 0.2 
-    }).addTo(map);
-    
-    // Only pan to location on first successful geolocation
-    if (!map.hasLayer(wfsLayer) || wfsLayer.getLayers().length === 0) {
-      map.setView(e.latlng, 17);
-    }
-  });
-
-  // When location access is denied or fails
-  map.on('locationerror', (e) => {
-    console.warn("Geolocation failed:", e.message);
-    // Don't show error in status, just log it
-  });
+// When location access is denied or fails
+map.on('locationerror', (e) => {
+  console.warn("Geolocation failed:", e.message);
+  statusEl.textContent = "Could not determine your location.";
+});
 
   // Create custom shape markers
   function createShapeMarker(latlng, color, shape, isIdeal = false, isCultivar = false) {
