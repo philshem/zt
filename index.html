@@ -155,7 +155,7 @@
   // debounce milliseconds when panning/zooming
   const DEBOUNCE_MS = 500;
 
-  // ---------- MAP SETUP ----------
+// ---------- MAP SETUP ----------
 const map = L.map('map').setView(START_COORD, START_ZOOM);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -170,12 +170,7 @@ let userMarker = null;
 let userCircle = null;
 let firstLocation = true; // Flag to only pan on first successful geolocation
 
-// 🔵 Try to locate user's position (without forcing view change)
-map.locate({
-  watch: false,
-  enableHighAccuracy: true,
-  timeout: 10000 // 10 seconds
-});
+// Geolocation requests are triggered via the 📍 button to satisfy browser permission requirements.
 
 // When location is found, add a marker
 map.on('locationfound', (e) => {
