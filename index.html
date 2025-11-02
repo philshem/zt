@@ -146,22 +146,38 @@
 
   const statusEl = document.getElementById('status');
 
-  // 🔵 Try to locate user's position
-  map.locate({ setView: true, maxZoom: 17 });
+  // Store location marker and circle for updates
+  let userMarker = null;
+  let userCircle = null;
+
+  // 🔵 Try to locate user's position (without forcing view change)
+  map.locate({ watch: false, enableHighAccuracy: true });
 
   // When location is found, add a marker
   map.on('locationfound', (e) => {
+    // Remove old marker if exists
+    if (userMarker) map.removeLayer(userMarker);
+    if (userCircle) map.removeLayer(userCircle);
+    
     const radius = e.accuracy / 2;
-    L.marker(e.latlng).addTo(map)
-      .bindPopup(`You are within ${Math.round(radius)} meters from this point`)
-      .openPopup();
-    L.circle(e.latlng, radius, { color: '#136aec', fillColor: '#136aec', fillOpacity: 0.2 }).addTo(map);
+    userMarker = L.marker(e.latlng).addTo(map)
+      .bindPopup(`You are within ${Math.round(radius)} meters from this point`);
+    userCircle = L.circle(e.latlng, radius, { 
+      color: '#136aec', 
+      fillColor: '#136aec', 
+      fillOpacity: 0.2 
+    }).addTo(map);
+    
+    // Only pan to location on first successful geolocation
+    if (!map.hasLayer(wfsLayer) || wfsLayer.getLayers().length === 0) {
+      map.setView(e.latlng, 17);
+    }
   });
 
   // When location access is denied or fails
   map.on('locationerror', (e) => {
     console.warn("Geolocation failed:", e.message);
-    statusEl.textContent = "⚠️ Standort konnte nicht ermittelt werden (geblockt oder nicht verfügbar)";
+    // Don't show error in status, just log it
   });
 
   // Create custom shape markers
