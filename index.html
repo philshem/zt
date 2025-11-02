@@ -77,11 +77,29 @@
     #closeButton:hover {
       background: #e0e0e0;
     }
+    
+    #locateButton {
+      position: absolute; top: 50px; right: 8px; z-index:1000;
+      background: rgba(255,255,255,0.95); padding: 8px 12px;
+      border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+      font-size: 18px; font-weight: bold;
+      cursor: pointer; user-select: none;
+      transition: background 0.2s;
+      border: none;
+    }
+    #locateButton:hover {
+      background: rgba(255,255,255,1);
+    }
+    #locateButton:active {
+      background: rgba(230,230,230,1);
+    }
   </style>
 </head>
 <body>
   <div id="status">Initializing…</div>
   <div id="infoButton" title="Truffle Information">ℹ️</div>
+  <button id="locateButton" title="Find my location">📍</button>
   <div id="map"></div>
   
   <div id="infoModal">
@@ -489,6 +507,38 @@ map.on('locationerror', (e) => {
       infoModal.classList.remove('show');
     }
   };
+
+  // ---------- LOCATE BUTTON ----------
+  const locateButton = document.getElementById('locateButton');
+  
+  locateButton.onclick = () => {
+    locateButton.textContent = '⏳';
+    map.locate({
+      setView: true,
+      maxZoom: 17,
+      enableHighAccuracy: true,
+      timeout: 10000
+    });
+    
+    // Reset button after a delay
+    setTimeout(() => {
+      if (locateButton.textContent === '⏳') {
+        locateButton.textContent = '📍';
+      }
+    }, 3000);
+  };
+  
+  // Update button on successful location
+  map.on('locationfound', () => {
+    locateButton.textContent = '📍';
+  });
+  
+  map.on('locationerror', () => {
+    locateButton.textContent = '❌';
+    setTimeout(() => {
+      locateButton.textContent = '📍';
+    }, 2000);
+  });
 
   </script>
 </body>
