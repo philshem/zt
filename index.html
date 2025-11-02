@@ -21,14 +21,98 @@
       border-radius: 8px;
     }
     .sticky-popup .leaflet-popup-content {
-      max-height: 260px;
+      max-height: min(70vh, 440px);
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
       touch-action: pan-y;
     }
     .sticky-popup .leaflet-popup-close-button {
-      font-size: 20px;
-      padding: 4px 6px;
+      font-size: 22px;
+      padding: 10px 12px;
+      line-height: 1;
+    }
+    .popup-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px 12px;
+      margin: 0 0 10px;
+    }
+    .popup-summary-item {
+      background: #f9fafb;
+      border-radius: 6px;
+      padding: 6px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-height: 52px;
+      box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.15);
+    }
+    .popup-summary-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #6b7280;
+    }
+    .popup-summary-value {
+      font-size: 14px;
+      font-weight: 600;
+      color: #0f172a;
+      word-break: break-word;
+    }
+    .popup-truffle {
+      border-top: 1px solid #e5e7eb;
+      padding-top: 10px;
+      margin-top: 6px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .popup-truffle-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+      color: #d97706;
+      margin-bottom: 6px;
+    }
+    .popup-truffle-list em {
+      font-style: italic;
+      font-weight: 600;
+      color: #374151;
+    }
+    .popup-truffle-list span {
+      color: #6b7280;
+      font-size: 13px;
+      margin-left: 4px;
+    }
+    .popup-truffle-list div + div {
+      margin-top: 4px;
+    }
+    .popup-age {
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.4;
+      box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.05);
+    }
+    .popup-age small {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      opacity: 0.85;
+    }
+    .popup-age--optimal {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .popup-age--cultivar {
+      background: #ede9fe;
+      color: #5b21b6;
+    }
+    .popup-age--warning {
+      background: #fef3c7;
+      color: #854d0e;
     }
     
     #infoButton {
@@ -166,7 +250,7 @@
   // srsName to request coordinates in EPSG:4326 (lat/lon)
   const WFS_SRS = 'EPSG:4326';
   // debounce milliseconds when panning/zooming
-  const DEBOUNCE_MS = 500;
+  const DEBOUNCE_MS = 250;
 
 // ---------- MAP SETUP ----------
 const map = L.map('map', {
@@ -185,11 +269,25 @@ const statusEl = document.getElementById('status');
 // Store location marker and circle for updates
 let userMarker = null;
 let userCircle = null;
+const GEO_TIMEOUT_MS = 10000;
+let locateRequested = false;
+let locateResetTimer = null;
+let activePopup = null;
+let allowBackgroundPopupClose = false;
 
 // Geolocation requests are triggered via the 📍 button to satisfy browser permission requirements.
 
 // When location is found, add a marker
 map.on('locationfound', (e) => {
+  if (!locateRequested) {
+    return;
+  }
+  locateRequested = false;
+  if (locateResetTimer) {
+    clearTimeout(locateResetTimer);
+    locateResetTimer = null;
+  }
+  locateButton.textContent = '📍';
   // Remove old marker if exists
   if (userMarker) map.removeLayer(userMarker);
   if (userCircle) map.removeLayer(userCircle);
@@ -219,18 +317,82 @@ map.on('locationfound', (e) => {
 
 // When location access is denied or fails
 map.on('locationerror', (e) => {
+  if (!locateRequested) {
+    return;
+  }
+  locateRequested = false;
+  if (locateResetTimer) {
+    clearTimeout(locateResetTimer);
+    locateResetTimer = null;
+  }
   console.warn("Geolocation failed:", e.message);
   statusEl.textContent = "Could not determine your location.";
+  locateButton.textContent = '❌';
+  setTimeout(() => {
+    locateButton.textContent = '📍';
+  }, 2000);
 });
 
 // Keep popups interactive on touch devices without immediately closing
 map.on('popupopen', (e) => {
+  activePopup = e.popup;
+  allowBackgroundPopupClose = false;
   const popupEl = e.popup.getElement();
   if (popupEl) {
     L.DomEvent.disableClickPropagation(popupEl);
     L.DomEvent.disableScrollPropagation(popupEl);
+
+    // Prevent the close button from being swallowed by the propagation guard
+    const closeBtn = popupEl.querySelector('.leaflet-popup-close-button');
+    if (closeBtn) {
+      L.DomEvent.disableClickPropagation(closeBtn);
+    }
   }
+
+  // Allow outside taps to close after the opening interaction finishes
+  setTimeout(() => {
+    allowBackgroundPopupClose = true;
+  }, 150);
 });
+
+map.on('popupclose', () => {
+  activePopup = null;
+  allowBackgroundPopupClose = false;
+});
+
+function eventTargetsPopup(originalEvent) {
+  if (!originalEvent) return false;
+  if (typeof originalEvent.composedPath === 'function') {
+    const path = originalEvent.composedPath();
+    if (Array.isArray(path)) {
+      return path.some(node => node && node.classList && node.classList.contains('leaflet-popup'));
+    }
+  }
+  let target = originalEvent.target || originalEvent.srcElement;
+  while (target) {
+    if (target.classList && target.classList.contains('leaflet-popup')) {
+      return true;
+    }
+    target = target.parentNode;
+  }
+  return false;
+}
+
+function handleBackgroundPopupClose(e) {
+  if (!activePopup || !allowBackgroundPopupClose) {
+    return;
+  }
+  const originalEvent = e.originalEvent || e;
+  if (eventTargetsPopup(originalEvent)) {
+    return;
+  }
+  allowBackgroundPopupClose = false;
+  map.closePopup(activePopup);
+}
+
+map.on('click', handleBackgroundPopupClose);
+map.on('touchstart', handleBackgroundPopupClose);
+map.on('contextmenu', handleBackgroundPopupClose);
 
   // Create custom shape markers
   function createShapeMarker(latlng, color, shape, isIdeal = false, isCultivar = false) {
@@ -388,23 +550,25 @@ map.on('popupopen', (e) => {
     'brumale': { name: 'Tuber brumale', common: 'Winter black truffle', months: 'Nov-Mar' }
   };
 
-  function buildPopup(props){
-    // Field order and labels - only essential info
-    const fields = [
-      { key: 'baumnummer', label: 'Baumnummer:' },
-      { key: 'baumnamelat', label: 'Latin name:' },
-      { key: 'baumnamedeu', label: 'German name:' },
-      { key: 'kronendurchmesser', label: 'Kronendurchmesser:' },
-      { key: 'pflanzjahr', label: 'Pflanzjahr:' }
-    ];
+  const SUMMARY_FIELDS = [
+    { key: 'baumnummer', label: 'Baumnummer' },
+    { key: 'baumnamelat', label: 'Latin name' },
+    { key: 'baumnamedeu', label: 'German name' },
+    { key: 'kronendurchmesser', label: 'Kronendurchmesser' },
+    { key: 'pflanzjahr', label: 'Pflanzjahr' }
+  ];
 
-    const rows = fields.map(f => {
-      let val = props && (f.key in props) ? props[f.key] : '—';
-      // Add meter unit for kronendurchmesser
-      if (f.key === 'kronendurchmesser' && val !== '—') {
+  function buildPopup(props){
+    const summaryGrid = SUMMARY_FIELDS.map(({ key, label }) => {
+      let val = props && (key in props) ? props[key] : '—';
+      if (key === 'kronendurchmesser' && val !== '—') {
         val = `${val} m`;
       }
-      return `<tr><td style="text-align:right;padding:4px 8px;font-weight:bold;white-space:nowrap;">${escapeHtml(f.label)}</td><td style="padding:4px 8px;">${fmtValue(val)}</td></tr>`;
+      return `
+        <div class="popup-summary-item">
+          <div class="popup-summary-label">${escapeHtml(label)}</div>
+          <div class="popup-summary-value">${fmtValue(val)}</div>
+        </div>`;
     }).join('');
 
     // Check if this is a truffle-compatible species
@@ -414,8 +578,8 @@ map.on('popupopen', (e) => {
     if (truffleSpecies && truffleSpecies.truffles && truffleSpecies.truffles.length > 0) {
       const truffleList = truffleSpecies.truffles.map(t => {
         const info = TRUFFLE_INFO[t];
-        return `<em>${info.name}</em> (${info.months})`;
-      }).join('<br>');
+        return `<div><em>${escapeHtml(info.name)}</em><span>(${escapeHtml(info.months)})</span></div>`;
+      }).join('');
       
       // Calculate age and check if ideal
       const age = getTreeAge(props);
@@ -427,32 +591,38 @@ map.on('popupopen', (e) => {
       if (age !== null) {
         if (ideal) {
           if (truffleSpecies.isCultivar) {
-            ageStatus = `<div style="margin-top:8px;padding:6px;background:#ede9fe;border-radius:4px;color:#5b21b6;">
-              ⭐ <strong>Ideal age for truffles</strong> (${ageText}, ideal: ${ageRangeText})<br>
+            ageStatus = `<div class="popup-age popup-age--cultivar">
+              ⭐ <strong>Ideal age for truffles</strong> (${escapeHtml(ageText)}, ideal: ${escapeHtml(ageRangeText)})
               <small>⚠️ Cultivar: less optimal than wild-type for truffle production</small>
             </div>`;
           } else {
-            ageStatus = `<div style="margin-top:8px;padding:6px;background:#dcfce7;border-radius:4px;color:#166534;">
-              ⭐ <strong>OPTIMAL for truffles!</strong> (${ageText}, ideal: ${ageRangeText})<br>
+            ageStatus = `<div class="popup-age popup-age--optimal">
+              ⭐ <strong>OPTIMAL for truffles!</strong> (${escapeHtml(ageText)}, ideal: ${escapeHtml(ageRangeText)})
               <small>✓ Wild-type / Native species</small>
             </div>`;
           }
         } else {
-          const cultivarNote = truffleSpecies.isCultivar ? '<br><small>Note: Cultivar variety</small>' : '';
-          ageStatus = `<div style="margin-top:8px;padding:6px;background:#fef3c7;border-radius:4px;color:#854d0e;">
-            Age: ${ageText} (ideal: ${ageRangeText})${cultivarNote}
+          const cultivarNote = truffleSpecies.isCultivar ? '<small>Note: Cultivar variety</small>' : '';
+          ageStatus = `<div class="popup-age popup-age--warning">
+            Age: ${escapeHtml(ageText)} (ideal: ${escapeHtml(ageRangeText)})
+            ${cultivarNote}
           </div>`;
         }
       }
       
-      truffleInfo = `<tr><td colspan="2" style="padding:12px 8px 4px 8px;border-top:2px solid #eee;">
-        <strong style="color:#d97706;">🍄 Truffle Host:</strong><br>
-        <div style="margin-top:6px;font-size:13px;line-height:1.6;">${truffleList}</div>
-        ${ageStatus}
-      </td></tr>`;
+      truffleInfo = `
+        <div class="popup-truffle">
+          <div class="popup-truffle-title">🍄 Truffle Host</div>
+          <div class="popup-truffle-list">${truffleList}</div>
+          ${ageStatus}
+        </div>`;
     }
 
-    return `<table style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.4;">${rows}${truffleInfo}</table>`;
+    return `
+      <div>
+        <div class="popup-summary-grid">${summaryGrid}</div>
+        ${truffleInfo}
+      </div>`;
   }
 
   // Build WFS GetFeature URL for the current bbox. For WFS 1.1.0 bbox order is minx,miny,maxx,maxy
@@ -538,32 +708,31 @@ map.on('popupopen', (e) => {
   const locateButton = document.getElementById('locateButton');
   
   locateButton.onclick = () => {
+    if (locateRequested) {
+      return;
+    }
+    locateRequested = true;
     locateButton.textContent = '⏳';
+
+    if (locateResetTimer) {
+      clearTimeout(locateResetTimer);
+      locateResetTimer = null;
+    }
+
     map.locate({
       setView: false,
       enableHighAccuracy: true,
-      timeout: 10000
+      timeout: GEO_TIMEOUT_MS,
+      watch: false
     });
     
-    // Reset button after a delay
-    setTimeout(() => {
+    locateResetTimer = setTimeout(() => {
       if (locateButton.textContent === '⏳') {
         locateButton.textContent = '📍';
       }
-    }, 3000);
+      locateRequested = false;
+    }, GEO_TIMEOUT_MS + 1000);
   };
-  
-  // Update button on successful location
-  map.on('locationfound', () => {
-    locateButton.textContent = '📍';
-  });
-  
-  map.on('locationerror', () => {
-    locateButton.textContent = '❌';
-    setTimeout(() => {
-      locateButton.textContent = '📍';
-    }, 2000);
-  });
 
   </script>
 </body>
