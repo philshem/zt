@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Zürich Truffle Tree Finder</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌳</text></svg>">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    html,body,#map{height:100%;margin:0;padding:0}
+    #map{height:100vh}
+    #status {
+      position: absolute; top: 8px; left: 8px; z-index:1000;
+      background: rgba(255,255,255,0.95); padding:8px 10px;
+      border-radius:5px; box-shadow:0 1px 3px rgba(0,0,0,0.15);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; font-size:13px;
+      max-width: 320px;
+    }
+    .leaflet-popup-content { max-width: 320px; word-break:break-word; }
+    
+    #infoButton {
+      position: absolute; top: 8px; right: 8px; z-index:1000;
+      background: rgba(255,255,255,0.95); padding: 8px 12px;
+      border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+      font-size: 18px; font-weight: bold;
+      cursor: pointer; user-select: none;
+      transition: background 0.2s;
+    }
+    #infoButton:hover {
+      background: rgba(255,255,255,1);
+    }
+    
+    #infoModal {
+      display: none;
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5); z-index: 2000;
+      align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    #infoModal.show {
+      display: flex;
+    }
+    
+    #infoContent {
+      background: white; border-radius: 8px;
+      padding: 20px; max-width: 800px; max-height: 90vh;
+      overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+    }
+    
+    #infoContent h2 {
+      margin-top: 0; color: #333;
+    }
+    
+    #infoContent table {
+      width: 100%; border-collapse: collapse; margin: 15px 0;
+    }
+    
+    #infoContent th {
+      background: #f5f5f5; padding: 10px;
+      text-align: left; font-weight: bold;
+      border: 1px solid #ddd;
+    }
+    
+    #infoContent td {
+      padding: 10px; border: 1px solid #ddd;
+      vertical-align: top;
+    }
+    
+    #closeButton {
+      float: right; background: #f0f0f0;
+      border: none; border-radius: 4px;
+      padding: 6px 12px; cursor: pointer;
+      font-size: 14px;
+    }
+    #closeButton:hover {
+      background: #e0e0e0;
+    }
+  </style>
+</head>
+<body>
+  <div id="status">Initializing…</div>
+  <div id="infoButton" title="Truffle Information">ℹ️</div>
+  <div id="map"></div>
+  
+  <div id="infoModal">
+    <div id="infoContent">
+      <button id="closeButton">Close</button>
+      <h2>Truffle Species & Host Trees</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Truffle species</th>
+            <th>Typical host trees</th>
+            <th>Harvest season*</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><em>Tuber aestivum</em><br>(Summer truffle)</td>
+            <td>Oak (<em>Quercus robur/petraea</em>), Hazel (<em>Corylus avellana</em>), Beech (<em>Fagus sylvatica</em>), Hornbeam (<em>Carpinus betulus</em>)</td>
+            <td>May – September</td>
+          </tr>
+          <tr>
+            <td><em>Tuber uncinatum</em><br>(Burgundy/Autumn truffle)</td>
+            <td>Oak, Hazel, Lime/Linden (<em>Tilia</em>), Hornbeam, Beech</td>
+            <td>September – December (into early winter)</td>
+          </tr>
+          <tr>
+            <td><em>Tuber brumale</em><br>(Winter black truffle)</td>
+            <td>Oak, Hazel, Linden/Hornbeam, other mixed broadleaves</td>
+            <td>November – March</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="font-size: 12px; color: #666; margin-top: 15px;">
+        * Harvest seasons are approximate and can vary by location and weather conditions.
+      </p>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+  // ---------- CONFIG ----------
+  const START_COORD = [47.36679, 8.50581];
+  const START_ZOOM = 19;
+
+  // WFS endpoint (base) and layer name from your GetCapabilities
+  // Note: use the base URL without GetCapabilities query parameters
+  const WFS_BASE = 'https://www.ogd.stadt-zuerich.ch/wfs/geoportal/Baumkataster';
+  const WFS_TYPENAME = 'baumkataster_baumstandorte';
+  // request outputFormat that the server advertises: application/vnd.geo+json
+  const WFS_OUTPUT = 'application/vnd.geo+json';
+  // srsName to request coordinates in EPSG:4326 (lat/lon)
+  const WFS_SRS = 'EPSG:4326';
+  // debounce milliseconds when panning/zooming
+  const DEBOUNCE_MS = 500;
+
+  // ---------- MAP SETUP ----------
+  const map = L.map('map').setView(START_COORD, START_ZOOM);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  const statusEl = document.getElementById('status');
+
+  // 🔵 Try to locate user's position
+  map.locate({ setView: true, maxZoom: 17 });
+
+  // When location is found, add a marker
+  map.on('locationfound', (e) => {
+    const radius = e.accuracy / 2;
+    L.marker(e.latlng).addTo(map)
+      .bindPopup(`You are within ${Math.round(radius)} meters from this point`)
+      .openPopup();
+    L.circle(e.latlng, radius, { color: '#136aec', fillColor: '#136aec', fillOpacity: 0.2 }).addTo(map);
+  });
+
+  // When location access is denied or fails
+  map.on('locationerror', (e) => {
+    console.warn("Geolocation failed:", e.message);
+    statusEl.textContent = "⚠️ Standort konnte nicht ermittelt werden (geblockt oder nicht verfügbar)";
+  });
+
+  // Create custom shape markers
+  function createShapeMarker(latlng, color, shape, isIdeal = false, isCultivar = false) {
+    const size = 12;
+    const svgShapes = {
+      circle: `<circle cx="12" cy="12" r="8" fill="${color}" stroke="white" stroke-width="2"/>`,
+      square: `<rect x="6" y="6" width="12" height="12" fill="${color}" stroke="white" stroke-width="2"/>`,
+      triangle: `<polygon points="12,4 20,18 4,18" fill="${color}" stroke="white" stroke-width="2"/>`,
+      pentagon: `<polygon points="12,3 21,9 18,19 6,19 3,9" fill="${color}" stroke="white" stroke-width="2"/>`,
+      diamond: `<polygon points="12,2 22,12 12,22 2,12" fill="${color}" stroke="white" stroke-width="2"/>`,
+      star: `<polygon points="12,2 14.5,9 22,9 16,14 18,22 12,17 6,22 8,14 2,9 9.5,9" fill="${color}" stroke="white" stroke-width="2"/>`,
+      starLarge: `<polygon points="12,2 14.5,9 22,9 16,14 18,22 12,17 6,22 8,14 2,9 9.5,9" fill="${color}" stroke="white" stroke-width="2.5"/>`
+    };
+    
+    // Use star shape for ideal age trees
+    let finalShape = isIdeal ? 'star' : shape;
+    let iconSize = [24, 24];
+    
+    // Wild-type (native) in ideal age: larger black star
+    if (isIdeal && !isCultivar) {
+      finalShape = 'starLarge';
+      iconSize = [30, 30]; // Bigger for wild-type
+      color = '#000000'; // Black for wild-type
+    } else if (isIdeal && isCultivar) {
+      // Cultivar in ideal age: keep purple star at normal size
+      color = '#8b4789'; // Purple for all cultivars
+    }
+    
+    const svgIcon = L.divIcon({
+      html: `<svg width="${iconSize[0]}" height="${iconSize[1]}" viewBox="0 0 24 24">${svgShapes[finalShape] || svgShapes.circle}</svg>`,
+      className: 'custom-marker',
+      iconSize: iconSize,
+      iconAnchor: [iconSize[0]/2, iconSize[1]/2]
+    });
+    
+    return L.marker(latlng, { icon: svgIcon });
+  }
+
+  // layer to hold current WFS features
+  let wfsLayer = L.geoJSON(null, {
+    onEachFeature(feature, layer) {
+      const props = feature.properties || {};
+      layer.bindPopup(buildPopup(props));
+      
+      // Store feature data for filtering
+      layer.feature = feature;
+    },
+    pointToLayer(feature, latlng) {
+      const props = feature.properties || {};
+      const truffleSpecies = getTruffleSpecies(props);
+      
+      if (truffleSpecies) {
+        // Check if tree is in ideal age range
+        const age = getTreeAge(props);
+        const ideal = isIdealAge(truffleSpecies, age);
+        
+        // Truffle-compatible species: custom shape marker with species color
+        // Use star shape if in ideal age range
+        // Wild-type (native) gets black star, cultivars get purple star
+        return createShapeMarker(latlng, truffleSpecies.color, truffleSpecies.shape, ideal, truffleSpecies.isCultivar);
+      } else {
+        // Default: faint grey circle marker for all other trees
+        return L.circleMarker(latlng, { 
+          radius: 5, 
+          fillColor: '#cccccc', 
+          color: '#999999', 
+          weight: 1, 
+          fillOpacity: 0.4 
+        });
+      }
+    }
+  }).addTo(map);
+
+  // ---------- HELPERS ----------
+  function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function debounce(fn, ms){ let t; return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn.apply(this,args), ms); }; }
+
+  // Truffle-compatible species detection and color mapping with ideal age ranges
+  const TRUFFLE_SPECIES = {
+    // Oak (Eiche) - Circle - ideal: 30-80 years
+    'Quercus robur': { color: '#8b4789', name: 'Oak', shape: 'circle', order: 1, truffles: ['aestivum', 'uncinatum', 'brumale'], minAge: 30, maxAge: 80 },
+    'Quercus petraea': { color: '#8b4789', name: 'Oak', shape: 'circle', order: 1, truffles: ['aestivum', 'uncinatum', 'brumale'], minAge: 30, maxAge: 80 },
+    // Hazel (Hasel) - Square - ideal: 15-30 years
+    'Corylus avellana': { color: '#4575b4', name: 'Hazel', shape: 'square', order: 2, truffles: ['aestivum', 'uncinatum', 'brumale'], minAge: 15, maxAge: 30 },
+    // Beech (Buche) - Triangle - ideal: 30-80 years
+    'Fagus sylvatica': { color: '#1a9850', name: 'Beech', shape: 'triangle', order: 3, truffles: ['aestivum', 'uncinatum'], minAge: 30, maxAge: 80 },
+    // Hornbeam (Hainbuche) - Pentagon - ideal: 30-80 years
+    'Carpinus betulus': { color: '#d95f02', name: 'Hornbeam', shape: 'pentagon', order: 4, truffles: ['aestivum', 'uncinatum', 'brumale'], minAge: 30, maxAge: 80 },
+    // Linden (Linde) - Diamond - ideal: 30-80 years
+    'Tilia cordata': { color: '#fee08b', name: 'Linden', shape: 'diamond', order: 5, truffles: ['uncinatum', 'brumale'], minAge: 30, maxAge: 80 },
+    'Tilia platyphyllos': { color: '#fee08b', name: 'Linden', shape: 'diamond', order: 5, truffles: ['uncinatum', 'brumale'], minAge: 30, maxAge: 80 }
+  };
+  
+
+
+  function isCultivar(latinName) {
+    // Check if the name contains cultivar indicators (quotes, 'cv.', 'var.', etc.)
+    return latinName.includes("'") || latinName.includes('"') || 
+           latinName.includes('cv.') || latinName.includes('var.') ||
+           latinName.includes('cultivar') || latinName.includes('subsp.');
+  }
+
+  function getTruffleSpecies(props) {
+    if (!props || !props.baumnamelat) return null;
+    const latinName = props.baumnamelat.trim();
+    
+    // Check for exact match first
+    if (TRUFFLE_SPECIES[latinName]) {
+      const speciesInfo = { ...TRUFFLE_SPECIES[latinName] };
+      speciesInfo.isCultivar = false;
+      return speciesInfo;
+    }
+    
+    // Check if latin name starts with any of our species (handles cultivars)
+    for (const [species, info] of Object.entries(TRUFFLE_SPECIES)) {
+      if (latinName.startsWith(species)) {
+        const speciesInfo = { ...info };
+        speciesInfo.isCultivar = isCultivar(latinName);
+        return speciesInfo;
+      }
+    }
+    
+    return null;
+  }
+  
+  function getTreeAge(props) {
+    if (!props || !props.pflanzjahr) return null;
+    const plantYear = parseInt(props.pflanzjahr);
+    if (isNaN(plantYear) || plantYear <= 0) return null;
+    return new Date().getFullYear() - plantYear;
+  }
+  
+  function isIdealAge(truffleSpecies, age) {
+    if (!truffleSpecies || age === null) return false;
+    return age >= truffleSpecies.minAge && age <= truffleSpecies.maxAge;
+  }
+  
+
+
+  function fmtValue(value){
+    if (value === null || value === undefined || value === '') return '—';
+    return escapeHtml(String(value));
+  }
+
+  // Truffle species info with seasons
+  const TRUFFLE_INFO = {
+    'aestivum': { name: 'Tuber aestivum', common: 'Summer truffle', months: 'May-Sep' },
+    'uncinatum': { name: 'Tuber uncinatum', common: 'Burgundy/Autumn truffle', months: 'Sep-Dec' },
+    'brumale': { name: 'Tuber brumale', common: 'Winter black truffle', months: 'Nov-Mar' }
+  };
+
+  function buildPopup(props){
+    // Field order and labels - only essential info
+    const fields = [
+      { key: 'baumnummer', label: 'Baumnummer:' },
+      { key: 'baumnamelat', label: 'Latin name:' },
+      { key: 'baumnamedeu', label: 'German name:' },
+      { key: 'kronendurchmesser', label: 'Kronendurchmesser:' },
+      { key: 'pflanzjahr', label: 'Pflanzjahr:' }
+    ];
+
+    const rows = fields.map(f => {
+      let val = props && (f.key in props) ? props[f.key] : '—';
+      // Add meter unit for kronendurchmesser
+      if (f.key === 'kronendurchmesser' && val !== '—') {
+        val = `${val} m`;
+      }
+      return `<tr><td style="text-align:right;padding:4px 8px;font-weight:bold;white-space:nowrap;">${escapeHtml(f.label)}</td><td style="padding:4px 8px;">${fmtValue(val)}</td></tr>`;
+    }).join('');
+
+    // Check if this is a truffle-compatible species
+    const truffleSpecies = getTruffleSpecies(props);
+    let truffleInfo = '';
+    
+    if (truffleSpecies && truffleSpecies.truffles && truffleSpecies.truffles.length > 0) {
+      const truffleList = truffleSpecies.truffles.map(t => {
+        const info = TRUFFLE_INFO[t];
+        return `<em>${info.name}</em> (${info.months})`;
+      }).join('<br>');
+      
+      // Calculate age and check if ideal
+      const age = getTreeAge(props);
+      const ideal = isIdealAge(truffleSpecies, age);
+      const ageText = age !== null ? `${age} years old` : 'unknown age';
+      const ageRangeText = `${truffleSpecies.minAge}-${truffleSpecies.maxAge} years`;
+      
+      let ageStatus = '';
+      if (age !== null) {
+        if (ideal) {
+          if (truffleSpecies.isCultivar) {
+            ageStatus = `<div style="margin-top:8px;padding:6px;background:#ede9fe;border-radius:4px;color:#5b21b6;">
+              ⭐ <strong>Ideal age for truffles</strong> (${ageText}, ideal: ${ageRangeText})<br>
+              <small>⚠️ Cultivar: less optimal than wild-type for truffle production</small>
+            </div>`;
+          } else {
+            ageStatus = `<div style="margin-top:8px;padding:6px;background:#dcfce7;border-radius:4px;color:#166534;">
+              ⭐ <strong>OPTIMAL for truffles!</strong> (${ageText}, ideal: ${ageRangeText})<br>
+              <small>✓ Wild-type / Native species</small>
+            </div>`;
+          }
+        } else {
+          const cultivarNote = truffleSpecies.isCultivar ? '<br><small>Note: Cultivar variety</small>' : '';
+          ageStatus = `<div style="margin-top:8px;padding:6px;background:#fef3c7;border-radius:4px;color:#854d0e;">
+            Age: ${ageText} (ideal: ${ageRangeText})${cultivarNote}
+          </div>`;
+        }
+      }
+      
+      truffleInfo = `<tr><td colspan="2" style="padding:12px 8px 4px 8px;border-top:2px solid #eee;">
+        <strong style="color:#d97706;">🍄 Truffle Host:</strong><br>
+        <div style="margin-top:6px;font-size:13px;line-height:1.6;">${truffleList}</div>
+        ${ageStatus}
+      </td></tr>`;
+    }
+
+    return `<table style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.4;">${rows}${truffleInfo}</table>`;
+  }
+
+  // Build WFS GetFeature URL for the current bbox. For WFS 1.1.0 bbox order is minx,miny,maxx,maxy
+  function buildWfsUrl(bboxStr){
+    // bboxStr from Leaflet is "minLng,minLat,maxLng,maxLat"
+    const params = new URLSearchParams({
+      service: 'WFS',
+      version: '1.1.0',
+      request: 'GetFeature',
+      typeName: WFS_TYPENAME,
+      outputFormat: WFS_OUTPUT,
+      srsName: WFS_SRS,
+      bbox: bboxStr + ',' + WFS_SRS
+    });
+    return `${WFS_BASE}?${params.toString()}`;
+  }
+
+  // Load features for current map view
+  async function loadFeaturesForView(){
+    const bounds = map.getBounds();
+    const bboxStr = bounds.toBBoxString(); // "minLng,minLat,maxLng,maxLat"
+    const url = buildWfsUrl(bboxStr);
+    statusEl.textContent = 'Fetching features for current view…';
+    try {
+      const resp = await fetch(url, { cache: 'no-store' });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+      // server responds with GeoJSON when using application/vnd.geo+json
+      const geojson = await resp.json();
+      // clear and add
+      wfsLayer.clearLayers();
+      // If server returns features in a property other than "features", try to handle gracefully
+      if (geojson.type === 'FeatureCollection' && Array.isArray(geojson.features)) {
+        wfsLayer.addData(geojson);
+        statusEl.textContent = `Loaded ${geojson.features.length} features in view`;
+      } else if (geojson.features && Array.isArray(geojson.features)) {
+        wfsLayer.addData(geojson.features);
+        statusEl.textContent = `Loaded ${geojson.features.length} features in view`;
+      } else {
+        // unexpected response; show raw
+        console.warn('Unexpected GeoJSON shape', geojson);
+        statusEl.textContent = 'Loaded (unexpected response shape) — check console';
+      }
+    } catch (err) {
+      console.error('WFS fetch failed', err);
+      statusEl.innerHTML = `Failed to load WFS: ${escapeHtml(err.message)}<br><small>(Check console for details)</small>`;
+    }
+  }
+
+  const debouncedLoad = debounce(loadFeaturesForView, DEBOUNCE_MS);
+
+  // ---------- INITIAL LOAD & EVENTS ----------
+  map.on('moveend', debouncedLoad);
+  map.on('zoomend', debouncedLoad);
+
+  // Load initial features after a short delay to ensure map is fully initialized
+  setTimeout(loadFeaturesForView, 100);
+
+  // Also allow zoom-to and reload by double-clicking the status box (handy for dev)
+  statusEl.title = 'Double-click to reload WFS for current view';
+  statusEl.ondblclick = () => debouncedLoad();
+
+  // ---------- INFO MODAL ----------
+  const infoButton = document.getElementById('infoButton');
+  const infoModal = document.getElementById('infoModal');
+  const closeButton = document.getElementById('closeButton');
+
+  infoButton.onclick = () => {
+    infoModal.classList.add('show');
+  };
+
+  closeButton.onclick = () => {
+    infoModal.classList.remove('show');
+  };
+
+  // Close modal when clicking outside content
+  infoModal.onclick = (e) => {
+    if (e.target === infoModal) {
+      infoModal.classList.remove('show');
+    }
+  };
+
+  </script>
+</body>
+</html>
