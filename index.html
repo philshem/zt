@@ -486,10 +486,10 @@ map.on('popupopen', (e) => {
       // If server returns features in a property other than "features", try to handle gracefully
       if (geojson.type === 'FeatureCollection' && Array.isArray(geojson.features)) {
         wfsLayer.addData(geojson);
-        statusEl.textContent = `Loaded ${geojson.features.length} features in view`;
+        statusEl.textContent = `Loaded ${geojson.features.length} trees`;
       } else if (geojson.features && Array.isArray(geojson.features)) {
         wfsLayer.addData(geojson.features);
-        statusEl.textContent = `Loaded ${geojson.features.length} features in view`;
+        statusEl.textContent = `Loaded ${geojson.features.length} trees`;
       } else {
         // unexpected response; show raw
         console.warn('Unexpected GeoJSON shape', geojson);
