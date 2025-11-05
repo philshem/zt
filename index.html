@@ -10,11 +10,11 @@
     html,body,#map{height:100%;margin:0;padding:0}
     #map{height:100vh}
     #status {
-      position: absolute; top: 8px; left: 8px; z-index:1000;
+      position: absolute; top: 8px; left: 56px; z-index:1000;
       background: rgba(255,255,255,0.95); padding:8px 10px;
       border-radius:5px; box-shadow:0 1px 3px rgba(0,0,0,0.15);
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; font-size:13px;
-      max-width: 320px;
+      max-width: min(320px, calc(100vw - 96px));
       transition: background 0.2s, color 0.2s;
     }
     #status.error {
@@ -42,31 +42,30 @@
     }
     .popup-summary-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 8px 12px;
-      margin: 0 0 10px;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 6px 8px;
+      margin: 0 0 8px;
     }
     .popup-summary-item {
-      background: #f9fafb;
-      border-radius: 6px;
-      padding: 6px 10px;
+      background: #f3f4f6;
+      border-radius: 5px;
+      padding: 6px 8px;
       display: flex;
       flex-direction: column;
-      gap: 2px;
-      min-height: 52px;
-      box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.15);
+      gap: 3px;
+      box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
     }
     .popup-summary-label {
       font-size: 11px;
       font-weight: 600;
+      letter-spacing: 0.02em;
+      color: #4b5563;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: #6b7280;
     }
     .popup-summary-value {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 600;
-      color: #0f172a;
+      color: #111827;
       word-break: break-word;
     }
     .popup-truffle {
@@ -225,13 +224,109 @@
       background: rgba(229,231,235,0.9);
       color: #4b5563;
     }
+    #searchContainer {
+      position: absolute;
+      bottom: 20px;
+      left: 8px;
+      top: auto;
+      right: auto;
+      z-index: 1000;
+      width: min(320px, calc(100vw - 120px));
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+    }
+    #searchInput {
+      width: 100%;
+      padding: 8px 34px 8px 10px;
+      border-radius: 5px;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      font-size: 13px;
+      background: rgba(255,255,255,0.95);
+      transition: border 0.2s, box-shadow 0.2s;
+    }
+    #searchInput:focus {
+      outline: none;
+      border-color: rgba(37, 99, 235, 0.6);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+    }
+    #searchResults {
+      margin-top: 6px;
+      background: rgba(255,255,255,0.97);
+      border-radius: 6px;
+      box-shadow: 0 4px 10px rgba(15,23,42,0.15);
+      max-height: 260px;
+      overflow-y: auto;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      display: none;
+    }
+    #searchResults.show {
+      display: block;
+    }
+    .search-result {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      width: 100%;
+      padding: 8px 10px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+      font-family: inherit;
+      font-size: 13px;
+      border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+      transition: background 0.15s;
+    }
+    .search-result:last-child {
+      border-bottom: none;
+    }
+    .search-result:hover,
+    .search-result:focus {
+      background: rgba(37, 99, 235, 0.08);
+      outline: none;
+    }
+    .search-result-title {
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .search-result-subtitle {
+      font-size: 12px;
+      color: #475569;
+      margin-top: 2px;
+    }
+    .search-empty {
+      padding: 10px;
+      font-size: 12px;
+      color: #6b7280;
+    }
+    .search-info {
+      padding: 10px;
+      font-size: 11px;
+      color: #475569;
+      background: rgba(248,250,252,0.9);
+    }
+    @media (max-width: 600px) {
+      #searchContainer {
+        left: 8px;
+        right: auto;
+        bottom: 20px;
+        width: calc(100vw - 120px);
+      }
+      #status {
+        left: 8px;
+        right: 8px;
+      }
+    }
   </style>
 </head>
 <body>
   <div id="status">Initializing…</div>
+  <div id="searchContainer">
+    <input id="searchInput" type="search" placeholder="Search trees in view…" autocomplete="off" spellcheck="false" aria-label="Search trees in view"/>
+    <div id="searchResults"></div>
+  </div>
   <div id="infoButton" title="Truffle Information">ℹ️</div>
   <div id="mapControls">
-    <button id="rotateButton" class="map-control-button" title="Align map with heading">🧭</button>
     <button id="locateButton" class="map-control-button" title="Find my location">📍</button>
   </div>
   <div id="map"></div>
@@ -275,8 +370,8 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
   // ---------- CONFIG ----------
-  const START_COORD = [47.36679, 8.50581];
-  const START_ZOOM = 19;
+  const START_COORD = [47.37, 8.514];
+  const START_ZOOM = 16;
 
   // WFS endpoint (base) and layer name from your GetCapabilities
   // Note: use the base URL without GetCapabilities query parameters
@@ -293,16 +388,23 @@
 const map = L.map('map', {
   closePopupOnClick: false,
   closeTooltipOnClick: false,
-  tapTolerance: 25,
-  rotate: true
+  tapTolerance: 25
 }).setView(START_COORD, START_ZOOM);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
+  maxZoom: 20,
   attribution: '&copy; OpenStreetMap contributors'
 }).addTo(map);
 
 const statusEl = document.getElementById('status');
+const searchContainer = document.getElementById('searchContainer');
+const searchInput = document.getElementById('searchInput');
+const searchResults = document.getElementById('searchResults');
+const lastSearchMatches = new Map();
+const SEARCH_RESULTS_LIMIT = 40;
+let activeFeatureKey = null;
+let suppressActiveFeatureReset = false;
+const debouncedUpdateSearch = debounce(() => updateSearchResults(), 150);
 
 // Store location marker and circle for updates
 let userMarker = null;
@@ -312,12 +414,6 @@ let locateRequested = false;
 let locateResetTimer = null;
 let activePopup = null;
 let allowBackgroundPopupClose = false;
-let rotateActive = false;
-let orientationHandler = null;
-let orientationLastHeading = null;
-let orientationPermissionDenied = false;
-let orientationInProgress = false;
-let orientationLastUpdate = 0;
 let statusTimer = null;
 
 function updateStatus(message, { type = 'info', sticky = false, allowHtml = false } = {}) {
@@ -485,139 +581,6 @@ map.on('click', handleBackgroundPopupClose);
 map.on('touchstart', handleBackgroundPopupClose);
 map.on('contextmenu', handleBackgroundPopupClose);
 
-function supportsMapRotation(){
-  return typeof map.setBearing === 'function';
-}
-
-function supportsDeviceOrientation(){
-  return typeof window !== 'undefined' && 'DeviceOrientationEvent' in window;
-}
-
-function normalizeHeading(value){
-  if (typeof value !== 'number' || Number.isNaN(value)) return null;
-  let heading = value % 360;
-  if (heading < 0) heading += 360;
-  return heading;
-}
-
-function headingDelta(a,b){
-  if (a === null || b === null) return Infinity;
-  const diff = Math.abs(a - b) % 360;
-  return diff > 180 ? 360 - diff : diff;
-}
-
-function extractHeading(event){
-  if (!event) return null;
-  if (typeof event.webkitCompassHeading === 'number') {
-    return normalizeHeading(event.webkitCompassHeading);
-  }
-  if (typeof event.compassHeading === 'number') {
-    return normalizeHeading(event.compassHeading);
-  }
-  if (typeof event.alpha === 'number') {
-    return normalizeHeading(event.alpha);
-  }
-  if (typeof event.heading === 'number') {
-    return normalizeHeading(event.heading);
-  }
-  return null;
-}
-
-function applyHeadingToMap(heading){
-  if (!supportsMapRotation()) return;
-  try {
-    map.setBearing(heading, { animate: false });
-  } catch (err) {
-    console.warn('Map bearing update failed', err);
-  }
-}
-
-function attachOrientationListener(){
-  if (orientationHandler) return true;
-  const handler = (event) => {
-    const heading = extractHeading(event);
-    if (heading === null) return;
-    const now = Date.now();
-    const delta = headingDelta(orientationLastHeading, heading);
-    if (delta < 1 && now - orientationLastUpdate < 120) return;
-    orientationLastHeading = heading;
-    orientationLastUpdate = now;
-    applyHeadingToMap(heading);
-  };
-  window.addEventListener('deviceorientationabsolute', handler, true);
-  window.addEventListener('deviceorientation', handler, true);
-  orientationHandler = handler;
-  return true;
-}
-
-function detachOrientationListener(){
-  if (!orientationHandler) return;
-  window.removeEventListener('deviceorientationabsolute', orientationHandler, true);
-  window.removeEventListener('deviceorientation', orientationHandler, true);
-  orientationHandler = null;
-}
-
-async function enableHeadingFollow(){
-  if (orientationInProgress) return false;
-  orientationInProgress = true;
-
-  if (!supportsMapRotation()) {
-    orientationInProgress = false;
-    updateStatus('Map rotation not supported in this browser.', { type: 'error', sticky: true });
-    return false;
-  }
-
-  if (!supportsDeviceOrientation()) {
-    orientationInProgress = false;
-    updateStatus('Compass data not available on this device.', { type: 'error', sticky: true });
-    return false;
-  }
-
-  if (orientationPermissionDenied) {
-    orientationInProgress = false;
-    updateStatus('Compass access previously denied.', { type: 'error', sticky: true });
-    return false;
-  }
-
-  let permissionGranted = true;
-  if (typeof window.DeviceOrientationEvent !== 'undefined' && typeof window.DeviceOrientationEvent.requestPermission === 'function') {
-    try {
-      const response = await window.DeviceOrientationEvent.requestPermission();
-      permissionGranted = response === 'granted';
-    } catch (err) {
-      console.warn('Device orientation permission error', err);
-      permissionGranted = false;
-    }
-  }
-
-  if (!permissionGranted) {
-    orientationPermissionDenied = true;
-    orientationInProgress = false;
-    updateStatus('Compass permission denied.', { type: 'error', sticky: true });
-    return false;
-  }
-
-  attachOrientationListener();
-  orientationInProgress = false;
-  updateStatus('Heading lock enabled.', { type: 'success' });
-  return true;
-}
-
-function disableHeadingFollow(resetBearing = true, notify = true){
-  detachOrientationListener();
-  orientationLastHeading = null;
-  orientationLastUpdate = 0;
-  if (resetBearing && supportsMapRotation()) {
-    try {
-      map.setBearing(0, { animate: true });
-    } catch (err) {
-      map.setBearing(0);
-    }
-  }
-  if (notify) {
-    updateStatus('Heading lock disabled.');
-  }
-}
 
   // Create custom shape markers
   function createShapeMarker(latlng, color, shape, isIdeal = false, isCultivar = false) {
@@ -668,6 +631,28 @@ function disableHeadingFollow(resetBearing = true, notify = true){
       
       // Store feature data for filtering
       layer.feature = feature;
+      layer.__searchText = buildSearchString(props);
+      layer.__presentation = buildSearchPresentation(props);
+      if (!layer.__featureKey) {
+        const latlng = typeof layer.getLatLng === 'function' ? layer.getLatLng() : null;
+        layer.__featureKey = getFeatureKey(props, latlng);
+      }
+
+      layer.on('popupopen', () => {
+        const latlng = typeof layer.getLatLng === 'function' ? layer.getLatLng() : null;
+        activeFeatureKey = layer.__featureKey || getFeatureKey(props, latlng);
+      });
+
+      layer.on('popupclose', () => {
+        if (suppressActiveFeatureReset) {
+          return;
+        }
+        const latlng = typeof layer.getLatLng === 'function' ? layer.getLatLng() : null;
+        const key = layer.__featureKey || getFeatureKey(props, latlng);
+        if (key && key === activeFeatureKey) {
+          activeFeatureKey = null;
+        }
+      });
     },
     pointToLayer(feature, latlng) {
       const props = feature.properties || {};
@@ -681,16 +666,30 @@ function disableHeadingFollow(resetBearing = true, notify = true){
         // Truffle-compatible species: custom shape marker with species color
         // Use star shape if in ideal age range
         // Wild-type (native) gets black star, cultivars get purple star
-        return createShapeMarker(latlng, truffleSpecies.color, truffleSpecies.shape, ideal, truffleSpecies.isCultivar);
+        const marker = createShapeMarker(latlng, truffleSpecies.color, truffleSpecies.shape, ideal, truffleSpecies.isCultivar);
+        marker._defaultOpacity = (marker.options && typeof marker.options.opacity === 'number') ? marker.options.opacity : 1;
+        marker.__featureKey = getFeatureKey(props, latlng);
+        return marker;
       } else {
         // Default: faint grey circle marker for all other trees
-        return L.circleMarker(latlng, { 
+        const circle = L.circleMarker(latlng, { 
           radius: 5, 
           fillColor: '#cccccc', 
           color: '#999999', 
           weight: 1, 
           fillOpacity: 0.4 
         });
+        circle._defaultOpacity = (circle.options && typeof circle.options.opacity === 'number') ? circle.options.opacity : 1;
+        circle._defaultStyle = {
+          radius: circle.options.radius,
+          fillColor: circle.options.fillColor,
+          color: circle.options.color,
+          weight: circle.options.weight,
+          fillOpacity: circle.options.fillOpacity,
+          opacity: typeof circle.options.opacity === 'number' ? circle.options.opacity : 1
+        };
+        circle.__featureKey = getFeatureKey(props, latlng);
+        return circle;
       }
     }
   }).addTo(map);
@@ -698,13 +697,18 @@ function disableHeadingFollow(resetBearing = true, notify = true){
   // ---------- HELPERS ----------
   function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-  function debounce(fn, ms){ let t; return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn.apply(this,args), ms); }; }
+  function debounce(fn, ms){
+    let t;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), ms);
+    };
+  }
 
   // Truffle-compatible species detection and color mapping with ideal age ranges
   const TRUFFLE_SPECIES = {
-    // Oak (Eiche) - Circle - ideal: 30-80 years
-    'Quercus robur': { color: '#8b4789', name: 'Oak', shape: 'circle', order: 1, truffles: ['aestivum', 'uncinatum', 'brumale'], minAge: 30, maxAge: 80 },
-    'Quercus petraea': { color: '#8b4789', name: 'Oak', shape: 'circle', order: 1, truffles: ['aestivum', 'uncinatum', 'brumale'], minAge: 30, maxAge: 80 },
+    // Oak (Eiche) - Circle - ideal: 30-80 years; match all Quercus species via prefix
+    'Quercus': { color: '#8b4789', name: 'Oak', shape: 'circle', order: 1, truffles: ['aestivum', 'uncinatum', 'brumale'], minAge: 30, maxAge: 80 },
     // Hazel (Hasel) - Square - ideal: 15-30 years
     'Corylus avellana': { color: '#4575b4', name: 'Hazel', shape: 'square', order: 2, truffles: ['aestivum', 'uncinatum', 'brumale'], minAge: 15, maxAge: 30 },
     // Beech (Buche) - Triangle - ideal: 30-80 years
@@ -774,9 +778,188 @@ function disableHeadingFollow(resetBearing = true, notify = true){
     { key: 'baumnummer', label: 'Baumnummer' },
     { key: 'baumnamelat', label: 'Latin name' },
     { key: 'baumnamedeu', label: 'German name' },
-    { key: 'kronendurchmesser', label: 'Kronendurchmesser' },
+  { key: 'kronendurchmesser', label: 'Kronendurchm.' },
     { key: 'pflanzjahr', label: 'Pflanzjahr' }
   ];
+
+  function getFeatureKey(props, latlng) {
+    if (!props) return null;
+    if (props.baumnummer) {
+      return `baumnummer:${props.baumnummer}`;
+    }
+    if (props.objectid) {
+      return `objectid:${props.objectid}`;
+    }
+    if (latlng && typeof latlng.lat === 'number' && typeof latlng.lng === 'number') {
+      return `coord:${latlng.lat.toFixed(6)},${latlng.lng.toFixed(6)}`;
+    }
+    return null;
+  }
+
+  function buildSearchString(props) {
+    if (!props) return '';
+    const parts = [];
+    for (const { key } of SUMMARY_FIELDS) {
+      const value = props[key];
+      if (value === null || value === undefined || value === '') continue;
+      parts.push(String(value).toLowerCase());
+    }
+    return parts.join(' ');
+  }
+
+  function buildSearchPresentation(props) {
+    const latin = props && props.baumnamelat ? String(props.baumnamelat).trim() : '';
+    const german = props && props.baumnamedeu ? String(props.baumnamedeu).trim() : '';
+    const treeId = props && props.baumnummer ? String(props.baumnummer).trim() : '';
+    let title = latin || german || (treeId ? `Baumnummer ${treeId}` : 'Tree');
+    let subtitle = '';
+    if (german && german !== title) {
+      subtitle = german;
+    } else if (latin && latin !== title) {
+      subtitle = latin;
+    } else if (treeId) {
+      subtitle = `Baumnummer ${treeId}`;
+    } else if (props && props.kronendurchmesser) {
+      subtitle = `Kronendurchmesser ${props.kronendurchmesser} m`;
+    }
+    if (subtitle && subtitle === title) {
+      subtitle = '';
+    }
+    return { title, subtitle };
+  }
+
+  function reopenActivePopup() {
+    if (!activeFeatureKey) return;
+    let reopened = false;
+    wfsLayer.eachLayer((layer) => {
+      if (reopened) return;
+      const latlng = typeof layer.getLatLng === 'function' ? layer.getLatLng() : null;
+      const key = layer.__featureKey || getFeatureKey(layer.feature && layer.feature.properties, latlng);
+      if (key && key === activeFeatureKey && typeof layer.openPopup === 'function') {
+        layer.openPopup();
+        reopened = true;
+      }
+    });
+    if (!reopened) {
+      activeFeatureKey = null;
+    }
+  }
+
+  function clearSearchResults() {
+    lastSearchMatches.clear();
+    if (searchResults) {
+      searchResults.innerHTML = '';
+      searchResults.classList.remove('show');
+    }
+    applySearchFilter(null);
+    reopenActivePopup();
+  }
+
+  function renderSearchResults(matches, truncated) {
+    if (!searchResults) return;
+    if (!matches.length) {
+      searchResults.innerHTML = '<div class="search-empty">No matches in current view</div>';
+      searchResults.classList.add('show');
+      return;
+    }
+    const itemsHtml = matches.map(({ id, title, subtitle }) => {
+      const subtitleHtml = subtitle ? `<div class="search-result-subtitle">${escapeHtml(subtitle)}</div>` : '';
+      return `<button type="button" class="search-result" data-layer-id="${escapeHtml(id)}"><div class="search-result-title">${escapeHtml(title)}</div>${subtitleHtml}</button>`;
+    }).join('');
+    const noteHtml = truncated ? '<div class="search-info">Showing first matches only. Refine your search to narrow results.</div>' : '';
+    searchResults.innerHTML = itemsHtml + noteHtml;
+    searchResults.classList.add('show');
+  }
+
+  function showLayer(layer) {
+    if (!layer) return;
+    if (typeof layer.setOpacity === 'function') {
+      const defaultOpacity = typeof layer._defaultOpacity === 'number' ? layer._defaultOpacity : 1;
+      layer.setOpacity(defaultOpacity);
+    }
+    if (typeof layer.setStyle === 'function' && layer._defaultStyle) {
+      layer.setStyle(layer._defaultStyle);
+    }
+    const el = typeof layer.getElement === 'function' ? layer.getElement() : null;
+    if (el) {
+      el.style.display = '';
+    }
+  }
+
+  function hideLayer(layer) {
+    if (!layer) return;
+    if (typeof layer.setOpacity === 'function') {
+      layer.setOpacity(0);
+    }
+    if (typeof layer.setStyle === 'function' && layer._defaultStyle) {
+      const hiddenStyle = { ...layer._defaultStyle, opacity: 0, fillOpacity: 0 };
+      layer.setStyle(hiddenStyle);
+    }
+    const el = typeof layer.getElement === 'function' ? layer.getElement() : null;
+    if (el) {
+      el.style.display = 'none';
+    }
+  }
+
+  function applySearchFilter(matchIds) {
+    const hasFilter = Array.isArray(matchIds);
+    const matchSet = hasFilter ? new Set(matchIds) : null;
+    wfsLayer.eachLayer((layer) => {
+      const id = String(L.stamp(layer));
+      const latlng = typeof layer.getLatLng === 'function' ? layer.getLatLng() : null;
+      const key = layer.__featureKey || getFeatureKey(layer.feature && layer.feature.properties, latlng);
+      if (!hasFilter || matchSet.has(id)) {
+        showLayer(layer);
+      } else {
+        hideLayer(layer);
+        if (key && key === activeFeatureKey) {
+          activeFeatureKey = null;
+          if (typeof layer.closePopup === 'function') {
+            layer.closePopup();
+          } else {
+            map.closePopup();
+          }
+        }
+      }
+    });
+  }
+
+  function updateSearchResults() {
+    if (!searchInput || !searchResults) return;
+    const query = searchInput.value.trim().toLowerCase();
+    if (!query) {
+      clearSearchResults();
+      return;
+    }
+
+    const bounds = map.getBounds();
+    const layers = wfsLayer.getLayers();
+    const matchesForDisplay = [];
+    const matchingIds = [];
+    lastSearchMatches.clear();
+
+    for (const layer of layers) {
+      if (typeof layer.getLatLng !== 'function') continue;
+      const latlng = layer.getLatLng();
+      if (!bounds.contains(latlng)) continue;
+      const props = layer.feature && layer.feature.properties;
+      if (!props) continue;
+      const searchText = layer.__searchText || buildSearchString(props);
+      if (!searchText || !searchText.includes(query)) continue;
+      const id = String(L.stamp(layer));
+      matchingIds.push(id);
+      if (matchesForDisplay.length < SEARCH_RESULTS_LIMIT) {
+        const presentation = layer.__presentation || buildSearchPresentation(props);
+        matchesForDisplay.push({ id, title: presentation.title, subtitle: presentation.subtitle });
+        lastSearchMatches.set(id, { layer, latlng });
+      }
+    }
+
+    const truncated = matchingIds.length > SEARCH_RESULTS_LIMIT;
+    renderSearchResults(matchesForDisplay, truncated);
+    applySearchFilter(matchingIds);
+    reopenActivePopup();
+  }
 
   function buildPopup(props){
     const summaryGrid = SUMMARY_FIELDS.map(({ key, label }) => {
@@ -871,19 +1054,37 @@ function disableHeadingFollow(resetBearing = true, notify = true){
       if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
       // server responds with GeoJSON when using application/vnd.geo+json
       const geojson = await resp.json();
-      // clear and add
-      wfsLayer.clearLayers();
+      let featureCount = null;
+      suppressActiveFeatureReset = true;
+      try {
+        wfsLayer.clearLayers();
+      } finally {
+        suppressActiveFeatureReset = false;
+      }
+
       // If server returns features in a property other than "features", try to handle gracefully
       if (geojson.type === 'FeatureCollection' && Array.isArray(geojson.features)) {
         wfsLayer.addData(geojson);
-        updateStatus(`Loaded ${geojson.features.length} total trees`, { type: 'success' });
+        featureCount = geojson.features.length;
       } else if (geojson.features && Array.isArray(geojson.features)) {
         wfsLayer.addData(geojson.features);
-        updateStatus(`Loaded ${geojson.features.length} total trees`, { type: 'success' });
+        featureCount = geojson.features.length;
       } else {
-        // unexpected response; show raw
-  warnOnce('unexpected-geojson', 'Unexpected GeoJSON shape', geojson);
+    // unexpected response; show raw
+    warnOnce('unexpected-geojson', 'Unexpected GeoJSON shape', geojson);
         updateStatus('Loaded (unexpected response shape) — check console', { type: 'error', sticky: true });
+        clearSearchResults();
+        reopenActivePopup();
+        return;
+      }
+
+      if (featureCount !== null) {
+        updateStatus(`Loaded ${featureCount} total trees`, { type: 'success' });
+        if (hasActiveSearch()) {
+          updateSearchResults();
+        } else {
+          clearSearchResults();
+        }
       }
     } catch (err) {
       console.error('WFS fetch failed', err);
@@ -892,21 +1093,32 @@ function disableHeadingFollow(resetBearing = true, notify = true){
         allowHtml: true,
         sticky: true
       });
+      clearSearchResults();
     }
   }
 
   const debouncedLoad = debounce(loadFeaturesForView, DEBOUNCE_MS);
 
+  function hasActiveSearch() {
+    return !!(searchInput && searchInput.value.trim());
+  }
+
+  function handleViewChange() {
+    debouncedLoad();
+    if (hasActiveSearch()) {
+      updateSearchResults();
+    }
+  }
+
   // ---------- INITIAL LOAD & EVENTS ----------
-  map.on('moveend', debouncedLoad);
-  map.on('zoomend', debouncedLoad);
+  map.on('moveend', handleViewChange);
 
   // Load initial features after a short delay to ensure map is fully initialized
   setTimeout(loadFeaturesForView, 100);
 
   // Also allow zoom-to and reload by double-clicking the status box (handy for dev)
   statusEl.title = 'Double-click to reload WFS for current view';
-  statusEl.ondblclick = () => debouncedLoad();
+  statusEl.ondblclick = () => loadFeaturesForView();
 
   // ---------- INFO MODAL ----------
   const infoButton = document.getElementById('infoButton');
@@ -929,59 +1141,8 @@ function disableHeadingFollow(resetBearing = true, notify = true){
   };
 
   // ---------- LOCATE BUTTON ----------
-  const rotateButton = document.getElementById('rotateButton');
   const locateButton = document.getElementById('locateButton');
 
-  if (!supportsMapRotation() || !supportsDeviceOrientation()) {
-    rotateButton.disabled = true;
-    rotateButton.title = 'Compass rotation is not available in this browser.';
-    rotateButton.classList.add('disabled');
-  }
-
-  rotateButton.onclick = async () => {
-    if (rotateButton.disabled) {
-      return;
-    }
-    if (orientationInProgress) {
-      return;
-    }
-
-    if (rotateActive) {
-      rotateActive = false;
-      rotateButton.classList.remove('active');
-      rotateButton.textContent = '🧭';
-      disableHeadingFollow(true);
-      return;
-    }
-
-    rotateButton.textContent = '⏳';
-    rotateButton.disabled = true;
-    const enabled = await enableHeadingFollow();
-    rotateButton.disabled = false;
-
-    if (enabled) {
-      rotateActive = true;
-      rotateButton.classList.add('active');
-      rotateButton.textContent = '🧭↻';
-    } else {
-      rotateActive = false;
-      rotateButton.classList.remove('active');
-      rotateButton.textContent = '🧭';
-      disableHeadingFollow(true, false);
-    }
-  };
- 
-  document.addEventListener('visibilitychange', () => {
-    if (!rotateActive) {
-      return;
-    }
-    if (document.hidden) {
-      disableHeadingFollow(false, false);
-    } else {
-      enableHeadingFollow();
-    }
-  });
-  
   locateButton.onclick = () => {
     if (locateRequested) {
       return;
@@ -1016,6 +1177,51 @@ function disableHeadingFollow(resetBearing = true, notify = true){
       locateRequested = false;
     }, GEO_TIMEOUT_MS + 1000);
   };
+
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      debouncedUpdateSearch();
+    });
+
+    searchInput.addEventListener('focus', () => {
+      if (hasActiveSearch()) {
+        updateSearchResults();
+      }
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        searchInput.value = '';
+        clearSearchResults();
+        searchInput.blur();
+      }
+    });
+  }
+
+  if (searchResults) {
+    searchResults.addEventListener('click', (e) => {
+      const target = e.target.closest('[data-layer-id]');
+      if (!target) return;
+      const id = target.getAttribute('data-layer-id');
+      if (!id) return;
+      const match = lastSearchMatches.get(id);
+      if (!match) return;
+      const desiredZoom = map.getZoom() < 17 ? 17 : map.getZoom();
+      map.setView(match.latlng, desiredZoom, { animate: true });
+      if (match.layer && typeof match.layer.openPopup === 'function') {
+        match.layer.openPopup();
+      }
+      searchResults.classList.remove('show');
+    });
+  }
+
+  if (searchContainer && searchResults) {
+    document.addEventListener('click', (e) => {
+      if (!searchContainer.contains(e.target)) {
+        searchResults.classList.remove('show');
+      }
+    });
+  }
 
   </script>
 </body>

@@ -47,6 +47,20 @@ This is a tool for personal use. Follow the original dataset's license and data-
 
 ## for fun
 
+### count trees per species
+
+```bash
+jq -r '
+  [.features[].properties.baumnamelat
+   | select(type == "string" and . != "")]
+  | group_by(.)
+  | map({species: .[0], count: length})
+  | sort_by(-.count)
+  | .[]
+  | "\(.species)\t\(.count)"
+' 304c0c00-b7f0-11f0-956f-005056b0ce82/data/gsz.baumkataster_baumstandorte.json
+```
+
 ### find the oldest tree
 
 ```bash
