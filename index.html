@@ -224,94 +224,7 @@
       background: rgba(229,231,235,0.9);
       color: #4b5563;
     }
-    #searchContainer {
-      position: absolute;
-      bottom: 20px;
-      left: 8px;
-      top: auto;
-      right: auto;
-      z-index: 1000;
-      width: min(320px, calc(100vw - 120px));
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
-    }
-    #searchInput {
-      width: 100%;
-      padding: 8px 34px 8px 10px;
-      border-radius: 5px;
-      border: 1px solid rgba(148, 163, 184, 0.5);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      font-size: 13px;
-      background: rgba(255,255,255,0.95);
-      transition: border 0.2s, box-shadow 0.2s;
-    }
-    #searchInput:focus {
-      outline: none;
-      border-color: rgba(37, 99, 235, 0.6);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
-    }
-    #searchResults {
-      margin-top: 6px;
-      background: rgba(255,255,255,0.97);
-      border-radius: 6px;
-      box-shadow: 0 4px 10px rgba(15,23,42,0.15);
-      max-height: 260px;
-      overflow-y: auto;
-      border: 1px solid rgba(148, 163, 184, 0.35);
-      display: none;
-    }
-    #searchResults.show {
-      display: block;
-    }
-    .search-result {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      width: 100%;
-      padding: 8px 10px;
-      border: none;
-      background: transparent;
-      cursor: pointer;
-      text-align: left;
-      font-family: inherit;
-      font-size: 13px;
-      border-bottom: 1px solid rgba(226, 232, 240, 0.9);
-      transition: background 0.15s;
-    }
-    .search-result:last-child {
-      border-bottom: none;
-    }
-    .search-result:hover,
-    .search-result:focus {
-      background: rgba(37, 99, 235, 0.08);
-      outline: none;
-    }
-    .search-result-title {
-      font-weight: 600;
-      color: #0f172a;
-    }
-    .search-result-subtitle {
-      font-size: 12px;
-      color: #475569;
-      margin-top: 2px;
-    }
-    .search-empty {
-      padding: 10px;
-      font-size: 12px;
-      color: #6b7280;
-    }
-    .search-info {
-      padding: 10px;
-      font-size: 11px;
-      color: #475569;
-      background: rgba(248,250,252,0.9);
-    }
     @media (max-width: 600px) {
-      #searchContainer {
-        left: 8px;
-        right: 8px;
-        bottom: 88px;
-        width: auto;
-      }
       #status {
         left: 8px;
         right: 8px;
@@ -321,10 +234,6 @@
 </head>
 <body>
   <div id="status">Initializing…</div>
-  <div id="searchContainer">
-    <input id="searchInput" type="search" placeholder="Search trees in view…" autocomplete="off" spellcheck="false" aria-label="Search trees in view"/>
-    <div id="searchResults"></div>
-  </div>
   <div id="infoButton" title="Truffle Information">ℹ️</div>
   <div id="mapControls">
     <button id="locateButton" class="map-control-button" title="Find my location">📍</button>
@@ -397,14 +306,8 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 const statusEl = document.getElementById('status');
-const searchContainer = document.getElementById('searchContainer');
-const searchInput = document.getElementById('searchInput');
-const searchResults = document.getElementById('searchResults');
-const lastSearchMatches = new Map();
-const SEARCH_RESULTS_LIMIT = 40;
 let activeFeatureKey = null;
 let suppressActiveFeatureReset = false;
-const debouncedUpdateSearch = debounce(() => updateSearchResults(), 150);
 
 // Store location marker and circle for updates
 let userMarker = null;
@@ -415,6 +318,16 @@ let locateResetTimer = null;
 let activePopup = null;
 let allowBackgroundPopupClose = false;
 let statusTimer = null;
+const CURRENT_YEAR = new Date().getFullYear();
+const SVG_SHAPES = {
+  circle: '<circle cx="12" cy="12" r="8" fill="%COLOR%" stroke="white" stroke-width="2"/>',
+  square: '<rect x="6" y="6" width="12" height="12" fill="%COLOR%" stroke="white" stroke-width="2"/>',
+  triangle: '<polygon points="12,4 20,18 4,18" fill="%COLOR%" stroke="white" stroke-width="2"/>',
+  pentagon: '<polygon points="12,3 21,9 18,19 6,19 3,9" fill="%COLOR%" stroke="white" stroke-width="2"/>',
+  diamond: '<polygon points="12,2 22,12 12,22 2,12" fill="%COLOR%" stroke="white" stroke-width="2"/>',
+  star: '<polygon points="12,2 14.5,9 22,9 16,14 18,22 12,17 6,22 8,14 2,9 9.5,9" fill="%COLOR%" stroke="white" stroke-width="2"/>',
+  starLarge: '<polygon points="12,2 14.5,9 22,9 16,14 18,22 12,17 6,22 8,14 2,9 9.5,9" fill="%COLOR%" stroke="white" stroke-width="2.5"/>'
+};
 
 function updateStatus(message, { type = 'info', sticky = false, allowHtml = false } = {}) {
   if (!statusEl) return;
@@ -471,7 +384,7 @@ map.on('locationfound', (e) => {
   if (userMarker) map.removeLayer(userMarker);
   if (userCircle) map.removeLayer(userCircle);
   
-  const radius = e.accuracy / 2;
+  const radius = Math.max(5, e.accuracy / 2);
 
   // Add marker
   userMarker = L.marker(e.latlng)
@@ -489,8 +402,7 @@ map.on('locationfound', (e) => {
     fillOpacity: 0.2
   }).addTo(map);
 
-  const currentZoom = map.getZoom();
-  const desiredZoom = currentZoom < 17 ? 17 : currentZoom;
+  const desiredZoom = Math.max(map.getZoom(), 17);
   map.setView(e.latlng, desiredZoom);
 });
 
@@ -584,16 +496,6 @@ map.on('contextmenu', handleBackgroundPopupClose);
 
   // Create custom shape markers
   function createShapeMarker(latlng, color, shape, isIdeal = false, isCultivar = false) {
-    const svgShapes = {
-      circle: `<circle cx="12" cy="12" r="8" fill="${color}" stroke="white" stroke-width="2"/>`,
-      square: `<rect x="6" y="6" width="12" height="12" fill="${color}" stroke="white" stroke-width="2"/>`,
-      triangle: `<polygon points="12,4 20,18 4,18" fill="${color}" stroke="white" stroke-width="2"/>`,
-      pentagon: `<polygon points="12,3 21,9 18,19 6,19 3,9" fill="${color}" stroke="white" stroke-width="2"/>`,
-      diamond: `<polygon points="12,2 22,12 12,22 2,12" fill="${color}" stroke="white" stroke-width="2"/>`,
-      star: `<polygon points="12,2 14.5,9 22,9 16,14 18,22 12,17 6,22 8,14 2,9 9.5,9" fill="${color}" stroke="white" stroke-width="2"/>`,
-      starLarge: `<polygon points="12,2 14.5,9 22,9 16,14 18,22 12,17 6,22 8,14 2,9 9.5,9" fill="${color}" stroke="white" stroke-width="2.5"/>`
-    };
-    
     // Use star shape for ideal age trees
     let finalShape = isIdeal ? 'star' : shape;
     let iconSize = [24, 24];
@@ -608,8 +510,10 @@ map.on('contextmenu', handleBackgroundPopupClose);
       color = '#8b4789'; // Purple for all cultivars
     }
     
+    const shapeKey = SVG_SHAPES[finalShape] ? finalShape : 'circle';
+    const shapeMarkup = SVG_SHAPES[shapeKey].replace(/%COLOR%/g, color);
     const svgIcon = L.divIcon({
-      html: `<svg width="${iconSize[0]}" height="${iconSize[1]}" viewBox="0 0 24 24">${svgShapes[finalShape] || svgShapes.circle}</svg>`,
+      html: `<svg width="${iconSize[0]}" height="${iconSize[1]}" viewBox="0 0 24 24">${shapeMarkup}</svg>`,
       className: 'custom-marker',
       iconSize: iconSize,
       iconAnchor: [iconSize[0]/2, iconSize[1]/2]
@@ -631,8 +535,6 @@ map.on('contextmenu', handleBackgroundPopupClose);
       
       // Store feature data for filtering
       layer.feature = feature;
-      layer.__searchText = buildSearchString(props);
-      layer.__presentation = buildSearchPresentation(props);
       if (!layer.__featureKey) {
         const latlng = typeof layer.getLatLng === 'function' ? layer.getLatLng() : null;
         layer.__featureKey = getFeatureKey(props, latlng);
@@ -754,7 +656,7 @@ map.on('contextmenu', handleBackgroundPopupClose);
     if (!props || !props.pflanzjahr) return null;
     const plantYear = parseInt(props.pflanzjahr);
     if (isNaN(plantYear) || plantYear <= 0) return null;
-    return new Date().getFullYear() - plantYear;
+    return CURRENT_YEAR - plantYear;
   }
   
   function isIdealAge(truffleSpecies, age) {
@@ -796,38 +698,6 @@ map.on('contextmenu', handleBackgroundPopupClose);
     return null;
   }
 
-  function buildSearchString(props) {
-    if (!props) return '';
-    const parts = [];
-    for (const { key } of SUMMARY_FIELDS) {
-      const value = props[key];
-      if (value === null || value === undefined || value === '') continue;
-      parts.push(String(value).toLowerCase());
-    }
-    return parts.join(' ');
-  }
-
-  function buildSearchPresentation(props) {
-    const latin = props && props.baumnamelat ? String(props.baumnamelat).trim() : '';
-    const german = props && props.baumnamedeu ? String(props.baumnamedeu).trim() : '';
-    const treeId = props && props.baumnummer ? String(props.baumnummer).trim() : '';
-    let title = latin || german || (treeId ? `Baumnummer ${treeId}` : 'Tree');
-    let subtitle = '';
-    if (german && german !== title) {
-      subtitle = german;
-    } else if (latin && latin !== title) {
-      subtitle = latin;
-    } else if (treeId) {
-      subtitle = `Baumnummer ${treeId}`;
-    } else if (props && props.kronendurchmesser) {
-      subtitle = `Kronendurchmesser ${props.kronendurchmesser} m`;
-    }
-    if (subtitle && subtitle === title) {
-      subtitle = '';
-    }
-    return { title, subtitle };
-  }
-
   function reopenActivePopup() {
     if (!activeFeatureKey) return;
     let reopened = false;
@@ -843,122 +713,6 @@ map.on('contextmenu', handleBackgroundPopupClose);
     if (!reopened) {
       activeFeatureKey = null;
     }
-  }
-
-  function clearSearchResults() {
-    lastSearchMatches.clear();
-    if (searchResults) {
-      searchResults.innerHTML = '';
-      searchResults.classList.remove('show');
-    }
-    applySearchFilter(null);
-    reopenActivePopup();
-  }
-
-  function renderSearchResults(matches, truncated) {
-    if (!searchResults) return;
-    if (!matches.length) {
-      searchResults.innerHTML = '<div class="search-empty">No matches in current view</div>';
-      searchResults.classList.add('show');
-      return;
-    }
-    const itemsHtml = matches.map(({ id, title, subtitle }) => {
-      const subtitleHtml = subtitle ? `<div class="search-result-subtitle">${escapeHtml(subtitle)}</div>` : '';
-      return `<button type="button" class="search-result" data-layer-id="${escapeHtml(id)}"><div class="search-result-title">${escapeHtml(title)}</div>${subtitleHtml}</button>`;
-    }).join('');
-    const noteHtml = truncated ? '<div class="search-info">Showing first matches only. Refine your search to narrow results.</div>' : '';
-    searchResults.innerHTML = itemsHtml + noteHtml;
-    searchResults.classList.add('show');
-  }
-
-  function showLayer(layer) {
-    if (!layer) return;
-    if (typeof layer.setOpacity === 'function') {
-      const defaultOpacity = typeof layer._defaultOpacity === 'number' ? layer._defaultOpacity : 1;
-      layer.setOpacity(defaultOpacity);
-    }
-    if (typeof layer.setStyle === 'function' && layer._defaultStyle) {
-      layer.setStyle(layer._defaultStyle);
-    }
-    const el = typeof layer.getElement === 'function' ? layer.getElement() : null;
-    if (el) {
-      el.style.display = '';
-    }
-  }
-
-  function hideLayer(layer) {
-    if (!layer) return;
-    if (typeof layer.setOpacity === 'function') {
-      layer.setOpacity(0);
-    }
-    if (typeof layer.setStyle === 'function' && layer._defaultStyle) {
-      const hiddenStyle = { ...layer._defaultStyle, opacity: 0, fillOpacity: 0 };
-      layer.setStyle(hiddenStyle);
-    }
-    const el = typeof layer.getElement === 'function' ? layer.getElement() : null;
-    if (el) {
-      el.style.display = 'none';
-    }
-  }
-
-  function applySearchFilter(matchIds) {
-    const hasFilter = Array.isArray(matchIds);
-    const matchSet = hasFilter ? new Set(matchIds) : null;
-    wfsLayer.eachLayer((layer) => {
-      const id = String(L.stamp(layer));
-      const latlng = typeof layer.getLatLng === 'function' ? layer.getLatLng() : null;
-      const key = layer.__featureKey || getFeatureKey(layer.feature && layer.feature.properties, latlng);
-      if (!hasFilter || matchSet.has(id)) {
-        showLayer(layer);
-      } else {
-        hideLayer(layer);
-        if (key && key === activeFeatureKey) {
-          activeFeatureKey = null;
-          if (typeof layer.closePopup === 'function') {
-            layer.closePopup();
-          } else {
-            map.closePopup();
-          }
-        }
-      }
-    });
-  }
-
-  function updateSearchResults() {
-    if (!searchInput || !searchResults) return;
-    const query = searchInput.value.trim().toLowerCase();
-    if (!query) {
-      clearSearchResults();
-      return;
-    }
-
-    const bounds = map.getBounds();
-    const layers = wfsLayer.getLayers();
-    const matchesForDisplay = [];
-    const matchingIds = [];
-    lastSearchMatches.clear();
-
-    for (const layer of layers) {
-      if (typeof layer.getLatLng !== 'function') continue;
-      const latlng = layer.getLatLng();
-      if (!bounds.contains(latlng)) continue;
-      const props = layer.feature && layer.feature.properties;
-      if (!props) continue;
-      const searchText = layer.__searchText || buildSearchString(props);
-      if (!searchText || !searchText.includes(query)) continue;
-      const id = String(L.stamp(layer));
-      matchingIds.push(id);
-      if (matchesForDisplay.length < SEARCH_RESULTS_LIMIT) {
-        const presentation = layer.__presentation || buildSearchPresentation(props);
-        matchesForDisplay.push({ id, title: presentation.title, subtitle: presentation.subtitle });
-        lastSearchMatches.set(id, { layer, latlng });
-      }
-    }
-
-    const truncated = matchingIds.length > SEARCH_RESULTS_LIMIT;
-    renderSearchResults(matchesForDisplay, truncated);
-    applySearchFilter(matchingIds);
-    reopenActivePopup();
   }
 
   function buildPopup(props){
@@ -1073,18 +827,13 @@ map.on('contextmenu', handleBackgroundPopupClose);
     // unexpected response; show raw
     warnOnce('unexpected-geojson', 'Unexpected GeoJSON shape', geojson);
         updateStatus('Loaded (unexpected response shape) — check console', { type: 'error', sticky: true });
-        clearSearchResults();
         reopenActivePopup();
         return;
       }
 
       if (featureCount !== null) {
         updateStatus(`Loaded ${featureCount} total trees`, { type: 'success' });
-        if (hasActiveSearch()) {
-          updateSearchResults();
-        } else {
-          clearSearchResults();
-        }
+        reopenActivePopup();
       }
     } catch (err) {
       console.error('WFS fetch failed', err);
@@ -1093,25 +842,14 @@ map.on('contextmenu', handleBackgroundPopupClose);
         allowHtml: true,
         sticky: true
       });
-      clearSearchResults();
     }
   }
 
   const debouncedLoad = debounce(loadFeaturesForView, DEBOUNCE_MS);
 
-  function hasActiveSearch() {
-    return !!(searchInput && searchInput.value.trim());
-  }
-
-  function handleViewChange() {
-    debouncedLoad();
-    if (hasActiveSearch()) {
-      updateSearchResults();
-    }
-  }
-
   // ---------- INITIAL LOAD & EVENTS ----------
-  map.on('moveend', handleViewChange);
+  map.on('moveend', debouncedLoad);
+  map.on('zoomend', debouncedLoad);
 
   // Load initial features after a short delay to ensure map is fully initialized
   setTimeout(loadFeaturesForView, 100);
@@ -1177,51 +915,6 @@ map.on('contextmenu', handleBackgroundPopupClose);
       locateRequested = false;
     }, GEO_TIMEOUT_MS + 1000);
   };
-
-  if (searchInput) {
-    searchInput.addEventListener('input', () => {
-      debouncedUpdateSearch();
-    });
-
-    searchInput.addEventListener('focus', () => {
-      if (hasActiveSearch()) {
-        updateSearchResults();
-      }
-    });
-
-    searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        searchInput.value = '';
-        clearSearchResults();
-        searchInput.blur();
-      }
-    });
-  }
-
-  if (searchResults) {
-    searchResults.addEventListener('click', (e) => {
-      const target = e.target.closest('[data-layer-id]');
-      if (!target) return;
-      const id = target.getAttribute('data-layer-id');
-      if (!id) return;
-      const match = lastSearchMatches.get(id);
-      if (!match) return;
-      const desiredZoom = map.getZoom() < 17 ? 17 : map.getZoom();
-      map.setView(match.latlng, desiredZoom, { animate: true });
-      if (match.layer && typeof match.layer.openPopup === 'function') {
-        match.layer.openPopup();
-      }
-      searchResults.classList.remove('show');
-    });
-  }
-
-  if (searchContainer && searchResults) {
-    document.addEventListener('click', (e) => {
-      if (!searchContainer.contains(e.target)) {
-        searchResults.classList.remove('show');
-      }
-    });
-  }
 
   </script>
 </body>
